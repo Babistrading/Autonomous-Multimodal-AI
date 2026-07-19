@@ -1,6 +1,6 @@
 /**
- * AdamW optimizer with cosine learning rate schedule.
- * All operations use Float32Arrays directly for efficiency.
+ * AdamW optimizer compatible with Babis M1 Transformer v2
+ * RMSNorm + SwiGLU + Weight Tying
  */
 
 import type { ModelWeights } from "./transformer.js";
@@ -10,6 +10,7 @@ export class AdamW {
   private t = 0;
   private m: Float32Array[] = [];
   private v: Float32Array[] = [];
+
   private readonly beta1 = 0.9;
   private readonly beta2 = 0.999;
   private readonly eps = 1e-8;
@@ -20,28 +21,46 @@ export class AdamW {
     private maxGradNorm: number = 1.0,
   ) {}
 
-  /** Collect all trainable parameter arrays from weights struct */
+  /**
+   * Returns every trainable Float32Array exactly once.
+   * lmHead is NOT included because it is tied to tokenEmbed.
+   */
   private getParamArrays(weights: ModelWeights): Float32Array[] {
-    const arrays: Float32Array[] = [weights.tokenEmbed, weights.lmHead];
+    const arrays: Float32Array[] = [];
+
+    arrays.push(weights.tokenEmbed);
+
     for (const layer of weights.layers) {
-      arrays.push(layer.Wq, layer.Wk, layer.Wv, layer.Wo, layer.W1, layer.W2);
-      arrays.push(layer.ln1Gamma, layer.ln1Beta, layer.ln2Gamma, layer.ln2Beta);
+      arrays.push(
+        layer.Wq,
+        layer.Wk,
+        layer.Wv,
+        layer.Wo,
+
+        layer.Wgate,
+        layer.Wup,
+        layer.Wdown,
+
+        layer.rms1,
+        layer.rms2,
+      );
     }
-    arrays.push(weights.finalLnGamma, weights.finalLnBeta);
+
+    arrays.push(weights.finalRmsGamma);
+
     return arrays;
   }
 
-  /** Initialize moment buffers if needed */
   private ensureInit(params: Float32Array[]): void {
-    if (this.m.length === 0) {
-      this.m = params.map(p => new Float32Array(p.length));
-      this.v = params.map(p => new Float32Array(p.length));
+    if (this.m.length !== params.length) {
+      this.m = params.map((p) => new Float32Array(p.length));
+      this.v = params.map((p) => new Float32Array(p.length));
     }
   }
 
-  /** One AdamW step on all parameters */
   step(weights: ModelWeights, grads: ModelWeights, currentLr?: number): void {
     this.t++;
+
     const lr = currentLr ?? this.lr;
 
     const params = this.getParamArrays(weights);
@@ -49,7 +68,6 @@ export class AdamW {
 
     this.ensureInit(params);
 
-    // Clip gradients
     clipGradNorm(gradArrays, this.maxGradNorm);
 
     const bc1 = 1 - Math.pow(this.beta1, this.t);
@@ -61,29 +79,39 @@ export class AdamW {
       const m = this.m[i];
       const v = this.v[i];
 
+      if (!p || !g) continue;
+
       for (let j = 0; j < p.length; j++) {
-        const gj = g[j];
-        m[j] = this.beta1 * m[j] + (1 - this.beta1) * gj;
-        v[j] = this.beta2 * v[j] + (1 - this.beta2) * gj * gj;
+        const grad = g[j];
+
+        m[j] = this.beta1 * m[j] + (1 - this.beta1) * grad;
+        v[j] = this.beta2 * v[j] + (1 - this.beta2) * grad * grad;
+
         const mHat = m[j] / bc1;
         const vHat = v[j] / bc2;
-        // AdamW: weight decay applied directly to weights (decoupled)
+
         p[j] -= lr * (mHat / (Math.sqrt(vHat) + this.eps) + this.wd * p[j]);
       }
 
-      // Zero gradients after update
       g.fill(0);
     }
   }
 
-  setLr(lr: number): void { this.lr = lr; }
-  getLr(): number { return this.lr; }
-  getStep(): number { return this.t; }
+  setLr(lr: number): void {
+    this.lr = lr;
+  }
+
+  getLr(): number {
+    return this.lr;
+  }
+
+  getStep(): number {
+    return this.t;
+  }
 }
 
 /**
- * Cosine learning rate schedule with linear warmup.
- * Returns learning rate multiplier for the given step.
+ * Cosine LR schedule with warmup
  */
 export function cosineLrSchedule(
   step: number,
@@ -93,9 +121,12 @@ export function cosineLrSchedule(
   minLrFraction = 0.1,
 ): number {
   if (step < warmupSteps) {
-    return baseLr * (step / Math.max(warmupSteps, 1));
+    return (baseLr * step) / Math.max(warmupSteps, 1);
   }
+
   const progress = (step - warmupSteps) / Math.max(totalSteps - warmupSteps, 1);
-  const cosineDecay = 0.5 * (1 + Math.cos(Math.PI * Math.min(progress, 1)));
-  return baseLr * (minLrFraction + (1 - minLrFraction) * cosineDecay);
+
+  const cosine = 0.5 * (1 + Math.cos(Math.PI * Math.min(progress, 1)));
+
+  return baseLr * (minLrFraction + (1 - minLrFraction) * cosine);
 }
