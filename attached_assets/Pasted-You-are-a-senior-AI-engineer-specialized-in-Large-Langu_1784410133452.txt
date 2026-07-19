@@ -1,0 +1,188 @@
+You are a senior AI engineer specialized in Large Language Model infrastructure.
+
+Improve the current Babis M1 tokenizer implementation.
+
+Goal:
+Transform the existing hybrid word/character tokenizer into a production-grade tokenizer suitable for a real Transformer LLM (70M-700M parameters).
+
+Current problems to fix:
+- Fixed vocabulary is not learned from data.
+- Fake tokens like tok_123 are not allowed.
+- Word splitting is weak for programming languages and scientific text.
+- Decoding adds incorrect spaces.
+- No tokenizer training pipeline.
+- No tokenizer persistence.
+- Limited multilingual support.
+
+Requirements:
+
+1. Implement a real Byte Pair Encoding (BPE) tokenizer.
+
+Architecture:
+
+tokenizer/
+ ├── BPETokenizer.ts
+ ├── bpeTrainer.ts
+ ├── vocab.json
+ ├── merges.json
+ ├── tokenizerConfig.json
+
+The tokenizer must support:
+- Byte-level encoding
+- UTF-8 characters
+- English
+- French
+- Code
+- Mathematics
+- Scientific text
+
+2. Vocabulary system:
+
+Support dynamic vocabulary creation.
+
+Configurations:
+
+Babis-M1-Tiny:
+- vocab size: 8000
+
+Babis-M1-Base:
+- vocab size: 32000
+
+Babis-M1-Large:
+- vocab size: 50000
+
+Never generate artificial tokens.
+Every token must come from training corpus statistics.
+
+3. Special tokens:
+
+Implement:
+
+[PAD] = 0
+[UNK] = 1
+[BOS] = 2
+[EOS] = 3
+[SYSTEM] = 4
+[USER] = 5
+[ASSISTANT] = 6
+[CODE] = 7
+[MATH] = 8
+[REASONING] = 9
+
+4. Tokenizer training:
+
+Create:
+
+train(corpus:string[], vocabSize:number)
+
+Pipeline:
+
+Raw corpus
+→ UTF-8 bytes
+→ Count token pairs
+→ Merge most frequent pairs
+→ Build vocabulary
+→ Save vocab.json
+→ Save merges.json
+
+
+5. Encoding:
+
+Implement:
+
+encode(text:string): number[]
+
+Must support:
+
+- normal text
+- programming code
+- JSON
+- Python
+- TypeScript
+- mathematical expressions
+
+Example:
+
+Input:
+"function add(a,b){return a+b}"
+
+Output:
+[
+token IDs...
+]
+
+
+6. Decoding:
+
+Implement:
+
+decode(tokens:number[]): string
+
+Must perfectly reconstruct original text.
+
+7. Optimization:
+
+Add:
+
+- token cache
+- fast lookup maps
+- memory efficient vocabulary loading
+- batch encoding:
+
+encodeBatch(texts:string[])
+
+
+8. Statistics:
+
+Extend:
+
+TokenizerStats:
+
+{
+ vocabSize,
+ totalTokensSeen,
+ uniqueTokens,
+ averageTokenLength,
+ compressionRatio,
+ mostFrequentTokens,
+ languageDistribution
+}
+
+
+9. Integration with Babis M1:
+
+Update model configuration:
+
+tokenizer:
+{
+ type:"BPE",
+ vocabSize:32000
+}
+
+Update API:
+
+GET /model/tokenizer/stats
+
+Return:
+
+{
+ algorithm:"BPE",
+ vocabSize:32000,
+ totalTokensSeen,
+ specialTokens:10
+}
+
+
+10. Quality requirements:
+
+The final implementation must:
+- Be TypeScript
+- Be modular
+- Have comments
+- Include unit tests
+- Work with the Babis M1 training engine
+- Support saving/loading checkpoints
+- Be ready for Transformer training
+
+Do not create a fake tokenizer.
+Implement a real tokenizer pipeline used by modern LLMs.

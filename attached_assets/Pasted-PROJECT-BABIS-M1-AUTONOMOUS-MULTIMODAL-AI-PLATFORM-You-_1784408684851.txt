@@ -1,0 +1,588 @@
+PROJECT: BABIS M1 — AUTONOMOUS MULTIMODAL AI PLATFORM
+
+You are a senior AI engineer, machine learning researcher, backend engineer, frontend engineer, DevOps engineer, and system architect.
+
+Build a complete AI platform called:
+
+Babis M1
+
+This is a real AI assistant platform, not a demo.
+
+The goal is to create a scalable AI system with:
+
+* Chat capabilities
+* Coding expertise
+* Multimodal understanding
+* Autonomous training pipeline
+* Dataset creation system
+* AI agents
+* Training dashboard
+* Model management
+* Real-time monitoring
+
+The system must be production-oriented and modular.
+
+⸻
+
+CORE RULES
+
+IMPORTANT:
+
+Do not create fake AI behavior.
+
+Do not simulate training.
+
+Do not generate fake metrics.
+
+Do not create fake parameter counts.
+
+Every displayed value must come from real backend calculations.
+
+If hardware is limited, optimize the system but keep the architecture real and scalable.
+
+⸻
+
+MODEL IDENTITY
+
+Model name:
+
+Babis M1
+
+Future versions:
+
+* Babis M2
+* Babis M3
+* Babis X
+
+The dashboard must always show:
+
+Current Model:
+Babis M1
+
+⸻
+
+MAIN APPLICATION
+
+The website contains:
+
+TAB 1 — CHAT
+
+A modern ChatGPT-style interface.
+
+Features:
+
+* Streaming responses
+* Conversation history
+* Markdown rendering
+* Code blocks
+* Syntax highlighting
+* File upload
+* Image upload
+* Video upload
+* Document analysis
+* Memory system
+* Tool usage
+
+⸻
+
+BABIS M1 SPECIALIZATION
+
+Babis M1 is specialized in:
+
+Advanced Programming AI
+
+Supported languages:
+
+* JavaScript
+* TypeScript
+* Python
+* Java
+* C++
+* C#
+* Rust
+* Go
+* PHP
+* SQL
+* HTML
+* CSS
+* Lua
+
+Capabilities:
+
+* Generate code
+* Explain code
+* Debug code
+* Optimize algorithms
+* Find vulnerabilities
+* Create websites
+* Create applications
+* Build APIs
+* Review projects
+* Refactor code
+
+⸻
+
+MULTIMODAL INTELLIGENCE
+
+Babis M1 must support:
+
+Image Analysis
+
+Ability to:
+
+* Understand images
+* Analyze screenshots
+* Read diagrams
+* Explain pictures
+* Extract information
+
+Video Analysis
+
+Ability to:
+
+* Analyze uploaded videos
+* Extract frames
+* Understand scenes
+* Summarize videos
+
+File Analysis
+
+Support:
+
+* PDF
+* DOCX
+* TXT
+* JSON
+* CSV
+* Code files
+* Images
+* Videos
+
+⸻
+
+TRAINING SYSTEM
+
+Create a real AI training engine.
+
+Training must support:
+
+* Transformer architecture
+* Forward pass
+* Backpropagation
+* Gradient updates
+* AdamW optimizer
+* Learning rate scheduling
+* Gradient clipping
+* Checkpoints
+* Resume training
+
+The model must be able to train:
+
+24 HOURS / 7 DAYS
+
+The training system runs continuously when enabled.
+
+⸻
+
+START TRAINING BUTTON
+
+The main training workflow:
+
+User clicks:
+
+START TRAINING
+
+The system automatically:
+
+1. Initializes Babis M1
+2. Creates or loads tokenizer
+3. Starts workers
+4. Prepares training data
+5. Starts training loop
+6. Updates dashboard live
+
+⸻
+
+AUTONOMOUS DATASET SYSTEM
+
+Babis M1 must not depend on the user manually uploading datasets.
+
+Create an integrated dataset creation system.
+
+The platform must generate and manage training data.
+
+Dataset agents:
+
+Dataset Creator Agent
+
+Creates training examples.
+
+Dataset Cleaner Agent
+
+Removes:
+
+* Duplicates
+* Bad samples
+* Corrupted data
+
+Dataset Quality Agent
+
+Checks:
+
+* Quality
+* Diversity
+* Difficulty
+
+⸻
+
+TRAINING CORPUS
+
+Create specialized training categories:
+
+Language
+
+* General knowledge
+* Conversations
+* Writing
+* Multiple languages
+
+Coding
+
+* Programming examples
+* Algorithms
+* Documentation
+* Debugging
+
+Mathematics
+
+* Equations
+* Problem solving
+* Calculations
+
+Reasoning
+
+* Logic
+* Planning
+* Analysis
+
+Science
+
+* Physics
+* Chemistry
+* Biology
+
+Instruction
+
+* Human assistant behavior
+
+⸻
+
+TOKENIZER SYSTEM
+
+Implement a real tokenizer.
+
+Use:
+
+BPE TOKENIZER
+
+Configuration:
+
+Vocabulary size:
+
+80,000 TOKENS
+
+Support:
+
+* Multiple languages
+* Programming code
+* Special tokens
+* Unknown token fallback
+
+Dashboard shows:
+
+* Vocabulary size
+* Total tokens
+* Token distribution
+* Most frequent tokens
+
+⸻
+
+MULTI THREADING TRAINING
+
+Create parallel workers.
+
+Workers:
+
+Language Worker
+
+Code Worker
+
+Math Worker
+
+Reasoning Worker
+
+Science Worker
+
+Vision Worker
+
+Instruction Worker
+
+Dataset Worker
+
+Tokenizer Worker
+
+Validation Worker
+
+Checkpoint Worker
+
+Each worker has:
+
+* Queue
+* Status
+* Logs
+* Performance metrics
+
+Workers train different skills simultaneously.
+
+⸻
+
+AI AGENTS SYSTEM
+
+Create autonomous agents:
+
+Coding Agent
+
+Writes and improves code.
+
+Research Agent
+
+Finds and organizes knowledge.
+
+Reasoning Agent
+
+Solves complex problems.
+
+Debug Agent
+
+Finds errors.
+
+Training Supervisor Agent
+
+Controls training.
+
+Memory Agent
+
+Manages long-term memory.
+
+Security Agent
+
+Checks vulnerabilities.
+
+Deployment Agent
+
+Manages applications.
+
+Agents communicate with each other.
+
+⸻
+
+POWER MANAGEMENT
+
+Create 4 performance modes.
+
+LOW MODE
+
+For weak hardware:
+
+* Less workers
+* Smaller batches
+* Lower memory usage
+
+MEDIUM MODE
+
+Balanced performance.
+
+HIGH MODE
+
+Uses:
+
+* More workers
+* Larger batches
+* Faster processing
+
+MAX MODE
+
+Maximum available performance:
+
+* GPU acceleration
+* More parallel workers
+* Maximum resources
+
+Automatically detect:
+
+* CPU
+* RAM
+* GPU
+* VRAM
+
+Recommend best mode.
+
+⸻
+
+TRAINING DASHBOARD
+
+Create a professional AI laboratory dashboard.
+
+Display:
+
+Model
+
+* Name
+* Version
+* Parameters
+* Layers
+* Vocabulary size
+
+Training
+
+* Epoch
+* Step
+* Loss
+* Validation loss
+* Perplexity
+* Learning rate
+* Tokens processed
+* Tokens per second
+* Training time
+
+Hardware
+
+* CPU usage
+* RAM usage
+* GPU usage
+* VRAM usage
+* Storage
+
+Workers
+
+* Active workers
+* Worker status
+* Worker speed
+
+⸻
+
+TRAINING CONTROLS
+
+Buttons:
+
+START TRAINING
+
+STOP TRAINING
+
+PAUSE TRAINING
+
+RESUME TRAINING
+
+SAVE CHECKPOINT
+
+LOAD CHECKPOINT
+
+CHANGE POWER MODE
+
+⸻
+
+THINKING MODE
+
+Add a thinking mode.
+
+The user can enable:
+
+Thinking Mode
+
+Show:
+
+* Planning status
+* Analysis summary
+* Verification status
+* Tool usage
+
+Do not expose private chain-of-thought.
+
+Only show safe reasoning summaries.
+
+⸻
+
+BACKEND ARCHITECTURE
+
+Use:
+
+TypeScript
+
+Node.js
+
+PostgreSQL
+
+Redis
+
+WebSockets
+
+Docker
+
+Workers
+
+REST API
+
+⸻
+
+DATABASE
+
+Create:
+
+Users
+
+Chats
+
+Messages
+
+Models
+
+Datasets
+
+Dataset Versions
+
+Training Jobs
+
+Training Metrics
+
+Workers
+
+Agents
+
+Checkpoints
+
+Logs
+
+API Keys
+
+Settings
+
+⸻
+
+FINAL OBJECTIVE
+
+Create Babis M1 as a complete AI operating system.
+
+The user should be able to:
+
+1. Open the website
+2. Enter Chat
+3. Upload files
+4. Use coding AI
+5. Open Training
+6. Press START TRAINING
+7. Watch Babis M1 train continuously
+8. Monitor workers
+9. Manage datasets
+10. Scale the system over time
+
+Build a serious AI platform, not a simple chatbot.

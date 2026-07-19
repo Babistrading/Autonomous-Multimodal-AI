@@ -1,0 +1,33 @@
+{
+  "name": "Babis M1 BPE Tokenizer",
+  "algorithm": "BPE",
+  "byteLevelEncoding": true,
+  "pretokenizationRegex": "GPT2-style",
+  "variants": {
+    "Babis-M1-Tiny":  { "vocabSize": 8000,  "description": "Fast, minimal vocabulary" },
+    "Babis-M1-Base":  { "vocabSize": 32000, "description": "Balanced vocabulary (recommended)" },
+    "Babis-M1-Large": { "vocabSize": 50000, "description": "Full vocabulary, best coverage" }
+  },
+  "defaultVariant": "Babis-M1-Large",
+  "specialTokens": {
+    "[PAD]":       0,
+    "[UNK]":       1,
+    "[BOS]":       2,
+    "[EOS]":       3,
+    "[SYSTEM]":    4,
+    "[USER]":      5,
+    "[ASSISTANT]": 6,
+    "[CODE]":      7,
+    "[MATH]":      8,
+    "[REASONING]": 9
+  },
+  "numSpecialTokens": 10,
+  "baseVocabSize": 256,
+  "languages": ["english", "french", "code", "mathematics", "science"],
+  "notes": [
+    "Byte-level encoding guarantees zero [UNK] tokens for any input text.",
+    "All tokens are derived from corpus statistics — no artificial placeholder tokens.",
+    "Perfect reconstruction: decode(encode(text)) == text for all valid UTF-8 input.",
+    "Vocabulary grows toward 50K as more training data is generated."
+  ]
+}

@@ -1,0 +1,241 @@
+Core Architecture
+
+- Optimize the transformer implementation for maximum efficiency.
+
+- Support configurable model sizes (Tiny, Base, Large).
+
+- Weight tying between token embeddings and LM Head.
+
+- RMSNorm support.
+
+- SwiGLU feed-forward network.
+
+- Rotary Position Embeddings (RoPE).
+
+- Flash Attention implementation when supported.
+
+- Fused attention kernels when available.
+
+- Gradient checkpointing.
+
+- Mixed precision (FP16/BF16).
+
+- Gradient accumulation.
+
+- Gradient clipping.
+
+- AdamW optimizer.
+
+- Cosine learning rate scheduler with warmup.
+
+- Weight decay.
+
+- Automatic checkpoint saving and loading.
+
+- Resume interrupted training automatically.
+
+# Tokenizer
+
+- Production-grade byte-level BPE tokenizer.
+
+- Target vocabulary up to 50,000 tokens.
+
+- GPT-2 style pre-tokenization.
+
+- Fast tokenizer cache.
+
+- Parallel batch encoding.
+
+- Streaming tokenization.
+
+- Perfect UTF-8 reconstruction.
+
+# Training
+
+- Multi-worker dataset loading.
+
+- Asynchronous prefetch.
+
+- Dynamic batching.
+
+- Packed sequences.
+
+- Sequence bucketing.
+
+- Automatic validation.
+
+- Early stopping.
+
+- Best checkpoint tracking.
+
+- EMA model weights.
+
+- Training metrics database.
+
+- Live monitoring.
+
+- TensorBoard compatible logging.
+
+- Training ETA estimation.
+
+# Inference
+
+- KV Cache.
+
+- Speculative Decoding support using a draft model.
+
+- Continuous batching.
+
+- Streaming token generation.
+
+- Parallel request scheduling.
+
+- Prefix cache.
+
+- Prompt cache.
+
+- Dynamic batching for inference.
+
+- Efficient beam search.
+
+- Top-K sampling.
+
+- Top-P sampling.
+
+- Temperature.
+
+- Typical sampling.
+
+- Repetition penalty.
+
+- Presence penalty.
+
+- Frequency penalty.
+
+- Stop sequences.
+
+- Token streaming API.
+
+# Memory Optimizations
+
+- Memory-mapped datasets.
+
+- Lazy loading.
+
+- Quantization support (INT8, INT4).
+
+- Weight offloading.
+
+- CPU fallback.
+
+- Efficient tensor allocation.
+
+- Automatic VRAM cleanup.
+
+# Performance
+
+- Multi-threaded CPU execution.
+
+- GPU acceleration when available.
+
+- Automatic hardware detection.
+
+- Benchmark mode.
+
+- Built-in profiler.
+
+- Bottleneck detection.
+
+- Performance statistics.
+
+- Token/sec benchmark.
+
+- Latency benchmark.
+
+# API
+
+- REST API.
+
+- Streaming responses (SSE/WebSocket).
+
+- OpenAI-compatible endpoints.
+
+- Model management API.
+
+- Checkpoint API.
+
+- Training API.
+
+- Metrics API.
+
+- Health endpoint.
+
+- Authentication with API keys.
+
+- Rate limiting.
+
+# Monitoring
+
+- Real-time dashboard.
+
+- GPU utilization.
+
+- CPU utilization.
+
+- RAM usage.
+
+- VRAM usage.
+
+- Active requests.
+
+- Tokens per second.
+
+- Average latency.
+
+- Queue length.
+
+- Training loss.
+
+- Validation loss.
+
+- Perplexity.
+
+- Learning rate.
+
+- Gradient norm.
+
+# Reliability
+
+- Robust error handling.
+
+- Automatic retries.
+
+- Safe checkpoint recovery.
+
+- Corruption detection.
+
+- Model versioning.
+
+- Configuration validation.
+
+- Comprehensive logging.
+
+# Code Quality
+
+- Modular architecture.
+
+- Strong TypeScript typing.
+
+- High performance.
+
+- Clean code.
+
+- Extensive documentation.
+
+- Unit tests.
+
+- Integration tests.
+
+- Maintain backward compatibility.
+
+Only implement features that are technically correct and production-ready. Do not add fake AI features or simulated capabilities. Prioritize correctness, efficiency, scalability, and maintainability.

@@ -3,20 +3,36 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Babis M1 AI Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: chat
+    description: Chat interface
+  - name: training
+    description: Training engine
+  - name: workers
+    description: Training workers
+  - name: datasets
+    description: Dataset management
+  - name: checkpoints
+    description: Model checkpoints
+  - name: agents
+    description: AI agents
+  - name: model
+    description: Model information
+  - name: hardware
+    description: Hardware metrics
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +40,399 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Chat ──────────────────────────────────────────────────────────────────
+  /chat/sessions:
+    get:
+      operationId: listChatSessions
+      tags: [chat]
+      summary: List all chat sessions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatSession"
+    post:
+      operationId: createChatSession
+      tags: [chat]
+      summary: Create a new chat session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatSessionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatSession"
+
+  /chat/sessions/{sessionId}:
+    delete:
+      operationId: deleteChatSession
+      tags: [chat]
+      summary: Delete a chat session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /chat/sessions/{sessionId}/messages:
+    get:
+      operationId: listMessages
+      tags: [chat]
+      summary: List messages in a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessage
+      tags: [chat]
+      summary: Send a message and get streaming response
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "200":
+          description: Streaming response (text/event-stream)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  # ── Training ──────────────────────────────────────────────────────────────
+  /training/status:
+    get:
+      operationId: getTrainingStatus
+      tags: [training]
+      summary: Get current training status
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingStatus"
+
+  /training/start:
+    post:
+      operationId: startTraining
+      tags: [training]
+      summary: Start training
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrainingStartInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingStatus"
+
+  /training/stop:
+    post:
+      operationId: stopTraining
+      tags: [training]
+      summary: Stop training
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingStatus"
+
+  /training/pause:
+    post:
+      operationId: pauseTraining
+      tags: [training]
+      summary: Pause training
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingStatus"
+
+  /training/resume:
+    post:
+      operationId: resumeTraining
+      tags: [training]
+      summary: Resume paused training
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingStatus"
+
+  /training/power-mode:
+    post:
+      operationId: setPowerMode
+      tags: [training]
+      summary: Change power mode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PowerModeInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingStatus"
+
+  /training/checkpoint:
+    post:
+      operationId: saveCheckpoint
+      tags: [training]
+      summary: Save current model checkpoint
+      responses:
+        "201":
+          description: Checkpoint saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Checkpoint"
+
+  /training/metrics:
+    get:
+      operationId: getTrainingMetrics
+      tags: [training]
+      summary: Get training metrics history
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrainingMetric"
+
+  /training/logs:
+    get:
+      operationId: getTrainingLogs
+      tags: [training]
+      summary: Get training logs
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrainingLog"
+
+  # ── Workers ───────────────────────────────────────────────────────────────
+  /workers:
+    get:
+      operationId: listWorkers
+      tags: [workers]
+      summary: List all training workers
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Worker"
+
+  # ── Datasets ──────────────────────────────────────────────────────────────
+  /datasets:
+    get:
+      operationId: listDatasets
+      tags: [datasets]
+      summary: List datasets by category
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Dataset"
+
+  /datasets/overview:
+    get:
+      operationId: getDatasetOverview
+      tags: [datasets]
+      summary: Overall dataset statistics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetOverview"
+
+  /datasets/generate:
+    post:
+      operationId: generateDataset
+      tags: [datasets]
+      summary: Trigger dataset generation for a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DatasetGenerateInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dataset"
+
+  # ── Checkpoints ───────────────────────────────────────────────────────────
+  /checkpoints:
+    get:
+      operationId: listCheckpoints
+      tags: [checkpoints]
+      summary: List saved checkpoints
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Checkpoint"
+
+  /checkpoints/{checkpointId}/load:
+    post:
+      operationId: loadCheckpoint
+      tags: [checkpoints]
+      summary: Load a checkpoint
+      parameters:
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingStatus"
+
+  # ── Agents ────────────────────────────────────────────────────────────────
+  /agents:
+    get:
+      operationId: listAgents
+      tags: [agents]
+      summary: List AI agents and their status
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+
+  # ── Model ─────────────────────────────────────────────────────────────────
+  /model/info:
+    get:
+      operationId: getModelInfo
+      tags: [model]
+      summary: Get model architecture information
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelInfo"
+
+  /model/tokenizer/stats:
+    get:
+      operationId: getTokenizerStats
+      tags: [model]
+      summary: Get tokenizer statistics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenizerStats"
+
+  # ── Hardware ──────────────────────────────────────────────────────────────
+  /hardware/metrics:
+    get:
+      operationId: getHardwareMetrics
+      tags: [hardware]
+      summary: Get real hardware utilization metrics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HardwareMetrics"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +440,351 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ChatSession:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        messageCount:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, title, messageCount, createdAt, updatedAt]
+
+    ChatSessionInput:
+      type: object
+      properties:
+        title:
+          type: string
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        sessionId:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        thinkingMode:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, sessionId, role, content, createdAt]
+
+    MessageInput:
+      type: object
+      properties:
+        content:
+          type: string
+        thinkingMode:
+          type: boolean
+      required: [content]
+
+    TrainingStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [idle, initializing, running, paused, stopped, error]
+        epoch:
+          type: integer
+        step:
+          type: integer
+        loss:
+          type: ["number", "null"]
+        validationLoss:
+          type: ["number", "null"]
+        perplexity:
+          type: ["number", "null"]
+        learningRate:
+          type: number
+        tokensProcessed:
+          type: integer
+        tokensPerSecond:
+          type: number
+        trainingTimeSeconds:
+          type: integer
+        powerMode:
+          type: string
+          enum: [low, medium, high, max]
+        activeWorkers:
+          type: integer
+        startedAt:
+          type: ["string", "null"]
+      required:
+        [
+          status,
+          epoch,
+          step,
+          learningRate,
+          tokensProcessed,
+          tokensPerSecond,
+          trainingTimeSeconds,
+          powerMode,
+          activeWorkers,
+        ]
+
+    TrainingStartInput:
+      type: object
+      properties:
+        powerMode:
+          type: string
+          enum: [low, medium, high, max]
+
+    PowerModeInput:
+      type: object
+      properties:
+        powerMode:
+          type: string
+          enum: [low, medium, high, max]
+      required: [powerMode]
+
+    Worker:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum: [idle, running, paused, error]
+        queueSize:
+          type: integer
+        processed:
+          type: integer
+        errors:
+          type: integer
+        tokensPerSecond:
+          type: number
+        currentTask:
+          type: ["string", "null"]
+      required: [id, name, type, status, queueSize, processed, errors, tokensPerSecond]
+
+    Dataset:
+      type: object
+      properties:
+        id:
+          type: integer
+        category:
+          type: string
+        totalSamples:
+          type: integer
+        qualityScore:
+          type: number
+        sizeKb:
+          type: integer
+        status:
+          type: string
+          enum: [ready, generating, cleaning]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, category, totalSamples, qualityScore, sizeKb, status, createdAt, updatedAt]
+
+    DatasetOverview:
+      type: object
+      properties:
+        totalSamples:
+          type: integer
+        totalCategories:
+          type: integer
+        averageQuality:
+          type: number
+        totalSizeKb:
+          type: integer
+        byCategory:
+          type: array
+          items:
+            type: object
+            properties:
+              category:
+                type: string
+              count:
+                type: integer
+              quality:
+                type: number
+            required: [category, count, quality]
+      required: [totalSamples, totalCategories, averageQuality, totalSizeKb, byCategory]
+
+    DatasetGenerateInput:
+      type: object
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
+      required: [category]
+
+    Checkpoint:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        epoch:
+          type: integer
+        step:
+          type: integer
+        loss:
+          type: number
+        sizeMb:
+          type: number
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, name, epoch, step, loss, sizeMb, isActive, createdAt]
+
+    Agent:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum: [active, idle, thinking, error]
+        lastAction:
+          type: string
+        taskCount:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, name, type, status, lastAction, taskCount, createdAt]
+
+    ModelInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        parameters:
+          type: integer
+        layers:
+          type: integer
+        heads:
+          type: integer
+        dModel:
+          type: integer
+        dFf:
+          type: integer
+        vocabSize:
+          type: integer
+        maxSeqLen:
+          type: integer
+        architecture:
+          type: string
+        activeParameters:
+          type: integer
+        memoryMb:
+          type: number
+      required:
+        [name, version, parameters, layers, heads, dModel, dFf, vocabSize, maxSeqLen, architecture, activeParameters, memoryMb]
+
+    TokenizerStats:
+      type: object
+      properties:
+        vocabSize:
+          type: integer
+        totalTokensSeen:
+          type: integer
+        uniqueTokens:
+          type: integer
+        mostFrequent:
+          type: array
+          items:
+            type: object
+            properties:
+              token:
+                type: string
+              count:
+                type: integer
+            required: [token, count]
+        averageTokenLength:
+          type: number
+      required: [vocabSize, totalTokensSeen, uniqueTokens, mostFrequent, averageTokenLength]
+
+    HardwareMetrics:
+      type: object
+      properties:
+        cpuUsagePercent:
+          type: number
+        ramUsedMb:
+          type: number
+        ramTotalMb:
+          type: number
+        gpuAvailable:
+          type: boolean
+        gpuUsagePercent:
+          type: ["number", "null"]
+        gpuVramUsedMb:
+          type: ["number", "null"]
+        storageFreeMb:
+          type: number
+        storageTotalMb:
+          type: number
+        uptimeSeconds:
+          type: integer
+        recommendedPowerMode:
+          type: string
+          enum: [low, medium, high, max]
+      required:
+        [cpuUsagePercent, ramUsedMb, ramTotalMb, gpuAvailable, storageFreeMb, storageTotalMb, uptimeSeconds, recommendedPowerMode]
+
+    TrainingMetric:
+      type: object
+      properties:
+        id:
+          type: integer
+        epoch:
+          type: integer
+        step:
+          type: integer
+        loss:
+          type: number
+        validationLoss:
+          type: ["number", "null"]
+        perplexity:
+          type: number
+        learningRate:
+          type: number
+        tokensPerSecond:
+          type: number
+        createdAt:
+          type: string
+      required: [id, epoch, step, loss, perplexity, learningRate, tokensPerSecond, createdAt]
+
+    TrainingLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        level:
+          type: string
+          enum: [info, warn, error, success]
+        message:
+          type: string
+        workerName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, level, message, createdAt]
