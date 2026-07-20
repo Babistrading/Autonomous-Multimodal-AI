@@ -45,14 +45,18 @@ const _keepAlive = setInterval(() => {
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
-const shutdown = (signal: string) => {
-  logger.info({ signal }, "Shutdown signal received — stopping gracefully in 5 s");
+const shutdown = async (signal: string) => {
+  logger.info({ signal }, "Shutdown signal received — saving checkpoint then exiting");
   clearInterval(_keepAlive);
-  // Give in-flight requests 5 seconds to complete before hard exit.
-  setTimeout(() => process.exit(0), 5_000);
+  try {
+    await trainingEngine.emergencySave();
+  } catch (err) {
+    logger.warn({ err }, "Checkpoint save failed during shutdown");
+  }
+  process.exit(0);
 };
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT",  () => shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT",  () => void shutdown("SIGINT"));
 
 // ─── HTTP server + 24/7 training ─────────────────────────────────────────────
 
