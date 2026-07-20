@@ -232,29 +232,27 @@ class TrainingEngine {
     logger.info("Training engine initialized — BPE tokenizer ready, DB seeded");
   }
 
-  private registerShutdownHandlers(): void {
-    const emergencySave = async (reason: string) => {
-      if (this.emergencySaving || !this.weights || this.state.step === 0) return;
-      this.emergencySaving = true;
-      try {
-        logger.warn({ reason, step: this.state.step }, "Emergency save triggered");
-        await this.persistCheckpoint("crash");
-        logger.info({ step: this.state.step }, "Emergency save complete");
-      } catch (err) {
-        logger.error({ err }, "Emergency save failed");
-      }
-    };
+  // Public emergency save — called by the process-level shutdown handler in index.ts
+  async emergencySave(): Promise<void> {
+    if (this.emergencySaving || !this.weights || this.state.step === 0) return;
+    this.emergencySaving = true;
+    try {
+      logger.warn({ step: this.state.step }, "Emergency save triggered");
+      await this.persistCheckpoint("crash");
+      logger.info({ step: this.state.step }, "Emergency save complete");
+    } catch (err) {
+      logger.error({ err }, "Emergency save failed");
+    } finally {
+      this.emergencySaving = false;
+    }
+  }
 
-    process.once("SIGTERM", () => emergencySave("SIGTERM").finally(() => process.exit(0)));
-    process.once("SIGINT",  () => emergencySave("SIGINT").finally(() => process.exit(0)));
-    process.on("uncaughtException",  (err) => {
-      logger.error({ err }, "Uncaught exception");
-      emergencySave("uncaughtException").finally(() => process.exit(1));
-    });
-    process.on("unhandledRejection", (reason) => {
-      logger.error({ reason }, "Unhandled promise rejection");
-      emergencySave("unhandledRejection");
-    });
+  // NOTE: uncaughtException / unhandledRejection are intentionally NOT registered
+  // here — index.ts owns those handlers and keeps the process alive.
+  // Only register SIGTERM / SIGINT so we can flush weights before a clean exit.
+  private registerShutdownHandlers(): void {
+    process.once("SIGTERM", () => this.emergencySave().finally(() => process.exit(0)));
+    process.once("SIGINT",  () => this.emergencySave().finally(() => process.exit(0)));
   }
 
   // ── DB seeding ──────────────────────────────────────────────────────────────
@@ -313,7 +311,7 @@ class TrainingEngine {
         DEFAULT_HYPERPARAMS.gradientClip,
       );
       const paramCount = countParams(ACTIVE_CONFIG).toLocaleString();
-      await this.addLog("success", `Model initialized: ${paramCount} parameters (40M architecture)`, "Training Supervisor Agent");
+      await this.addLog("success", `Model initialized: ${paramCount} parameters (~1M architecture)`, "Training Supervisor Agent");
     }
 
     await this.addLog("info", `Tokenizer ready: ${tokenizer.vocabSize.toLocaleString()} token vocabulary`, "Tokenizer Worker");
@@ -587,8 +585,10 @@ class TrainingEngine {
     // Agent tick every 15 steps
     if (this.state.step % 15 === 0) this.tickAgents();
 
-    // Auto-save every 1000 steps
+    // Auto-save every 1000 steps — set lastSaveStep immediately to prevent
+    // multiple concurrent saves from firing before the async write completes.
     if (this.state.step - this.lastSaveStep >= 1000) {
+      this.lastSaveStep = this.state.step;
       this.persistCheckpoint("periodic").catch(() => {});
     }
 

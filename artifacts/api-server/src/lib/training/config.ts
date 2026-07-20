@@ -65,24 +65,24 @@ export const FULL_SPEC: ModelConfig = {
 };
 
 /**
- * Active training core — ~40M parameters running on CPU.
- * Architecturally identical to FULL_SPEC, scaled for available memory.
- * dFf = 1408 ≈ (8/3)·512, keeping SwiGLU proportions.
+ * Active training core — ~1M parameters running on CPU.
+ * Architecturally identical to FULL_SPEC, scaled to ~1M params.
+ * dFf = 320 ≈ (8/3)·128, keeping SwiGLU proportions.
  * vocabSize is overwritten at runtime to match the real BPE vocabulary.
  *
- * Parameter count (V≈2000 BPE):
- *   tokenEmbed  = V × 512       ≈ 1.0M
- *   per layer   = 4·512² + 3·512·1408 + 2·512
- *               = 1,048,576 + 2,162,688 + 1,024  = 3,212,288
- *   12 layers   = 38,547,456
- *   finalGamma  = 512
- *   Total       ≈ 39.6M parameters
+ * Parameter count (V≈1978 BPE):
+ *   tokenEmbed  = V × 128       ≈ 253K
+ *   per layer   = 4·128² + 3·128·320 + 2·128
+ *               = 65,536 + 122,880 + 256  = 188,672
+ *   4 layers    = 754,688
+ *   finalGamma  = 128
+ *   Total       ≈ 1.008M parameters
  */
 export const ACTIVE_CONFIG: ModelConfig = {
-  dModel: 512,
-  nLayers: 12,
-  nHeads: 8,
-  dFf: 1408,
+  dModel: 128,
+  nLayers: 4,
+  nHeads: 4,
+  dFf: 320,
   vocabSize: 8_000,   // overwritten by BPE init
   maxSeqLen: 128,
 };
@@ -109,7 +109,7 @@ export function countParams(cfg: ModelConfig): number {
 export type PowerMode = "low" | "medium" | "high" | "max";
 
 /**
- * Power mode configs tuned for the 40M-parameter active model on CPU.
+ * Power mode configs tuned for the 1M-parameter active model on CPU.
  * seqLen is kept short to maintain reasonable step speed.
  */
 export const POWER_CONFIGS: Record<

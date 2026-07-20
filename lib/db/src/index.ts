@@ -10,13 +10,17 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Neon free tier: keep the pool small to avoid "Authentication timed out" errors.
-// 3 connections max is enough for our API + training loop writes.
+// Keep the pool small — enough for API + training loop writes.
+// connectionTimeoutMillis set high so cold-start DB connections don't fail.
+// keepAlive prevents idle connections from being silently dropped.
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 3,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
+  max: 5,
+  idleTimeoutMillis: 60_000,
+  connectionTimeoutMillis: 30_000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
+  allowExitOnIdle: false,
 });
 export const db = drizzle(pool, { schema });
 
