@@ -1,11 +1,11 @@
 /**
  * Babis M1 model configurations — v2 (SwiGLU / RoPE / RMSNorm / Weight-Tying)
  *
- * Architecture changes from v1:
- *  - FFN: GELU(W1·W2)  →  SwiGLU(Wgate, Wup, Wdown) — 3 matrices, smaller dFf
- *  - Norm: LayerNorm   →  RMSNorm  (no mean subtraction, no β)
- *  - Pos:  learned PE  →  RoPE     (no stored posEmbed table)
- *  - Head: separate lmHead → tied to tokenEmbed  (weight tying)
+ * Architecture:
+ *  - FFN: SwiGLU(Wgate, Wup, Wdown) — 3 matrices
+ *  - Norm: RMSNorm  (no mean subtraction, no β)
+ *  - Pos:  RoPE     (no stored posEmbed table)
+ *  - Head: tied to tokenEmbed  (weight tying)
  */
 
 export interface ModelConfig {
@@ -18,31 +18,71 @@ export interface ModelConfig {
   maxSeqLen: number;
 }
 
+export interface HyperParams {
+  /** AdamW β₁ — first moment decay */
+  beta1: number;
+  /** AdamW β₂ — second moment decay */
+  beta2: number;
+  /** AdamW ε — numerical stability */
+  epsilon: number;
+  /** L2 weight decay coefficient */
+  weightDecay: number;
+  /** Gradient clipping max norm */
+  gradientClip: number;
+  /** LR warmup steps */
+  warmupSteps: number;
+  /** Total training steps for cosine schedule */
+  totalSteps: number;
+  /** Minimum LR fraction at end of cosine schedule */
+  minLrFraction: number;
+  /** Gradient accumulation steps before optimizer update */
+  gradAccum: number;
+}
+
+export const DEFAULT_HYPERPARAMS: HyperParams = {
+  beta1: 0.9,
+  beta2: 0.95,
+  epsilon: 1e-8,
+  weightDecay: 0.1,
+  gradientClip: 1.0,
+  warmupSteps: 200,
+  totalSteps: 500_000,
+  minLrFraction: 0.1,
+  gradAccum: 4,
+};
+
 /**
  * Full Babis M1 architecture specification — 208M parameters.
  * Requires GPU for full training. Displayed in the dashboard.
- * Uses dFf = 2048 ≈ (8/3)·768, matching LLaMA-style FFN width.
  */
 export const FULL_SPEC: ModelConfig = {
   dModel: 768,
   nLayers: 24,
   nHeads: 12,
-  dFf: 2048,          // SwiGLU inner dim (3 matrices × 768 × 2048 × 24 layers)
+  dFf: 2048,
   vocabSize: 50_000,
   maxSeqLen: 2048,
 };
 
 /**
- * Active training core — runs on CPU.
+ * Active training core — ~40M parameters running on CPU.
  * Architecturally identical to FULL_SPEC, scaled for available memory.
- * Uses dFf = 352 ≈ (8/3)·128, keeping FFN parameter parity with old dFf=512.
- * vocabSize is updated at runtime to match the real BPE vocabulary.
+ * dFf = 1408 ≈ (8/3)·512, keeping SwiGLU proportions.
+ * vocabSize is overwritten at runtime to match the real BPE vocabulary.
+ *
+ * Parameter count (V≈2000 BPE):
+ *   tokenEmbed  = V × 512       ≈ 1.0M
+ *   per layer   = 4·512² + 3·512·1408 + 2·512
+ *               = 1,048,576 + 2,162,688 + 1,024  = 3,212,288
+ *   12 layers   = 38,547,456
+ *   finalGamma  = 512
+ *   Total       ≈ 39.6M parameters
  */
 export const ACTIVE_CONFIG: ModelConfig = {
-  dModel: 128,
-  nLayers: 4,
-  nHeads: 4,
-  dFf: 352,           // SwiGLU inner dim (3 × 128 × 352 × 4 layers ≈ same as 2 × 128 × 512)
+  dModel: 512,
+  nLayers: 12,
+  nHeads: 8,
+  dFf: 1408,
   vocabSize: 8_000,   // overwritten by BPE init
   maxSeqLen: 128,
 };
@@ -66,31 +106,32 @@ export function countParams(cfg: ModelConfig): number {
   return V * d + L * perLayer + d;
 }
 
-// FULL_SPEC  ≈ 208,306,944 parameters
-// ACTIVE_CONFIG (V=1978 BPE) ≈ 1,057,152 parameters
-
 export type PowerMode = "low" | "medium" | "high" | "max";
 
+/**
+ * Power mode configs tuned for the 40M-parameter active model on CPU.
+ * seqLen is kept short to maintain reasonable step speed.
+ */
 export const POWER_CONFIGS: Record<
   PowerMode,
   { batchSize: number; seqLen: number; lr: number; workers: number; gradAccum: number }
 > = {
-  low:    { batchSize: 1, seqLen: 32,  lr: 1e-4,  workers: 2,  gradAccum: 1 },
-  medium: { batchSize: 1, seqLen: 64,  lr: 3e-4,  workers: 4,  gradAccum: 2 },
-  high:   { batchSize: 2, seqLen: 96,  lr: 5e-4,  workers: 7,  gradAccum: 4 },
-  max:    { batchSize: 4, seqLen: 128, lr: 1e-3,  workers: 11, gradAccum: 8 },
+  low:    { batchSize: 1, seqLen: 16, lr: 1e-4,  workers: 2,  gradAccum: 1 },
+  medium: { batchSize: 1, seqLen: 24, lr: 3e-4,  workers: 5,  gradAccum: 2 },
+  high:   { batchSize: 1, seqLen: 32, lr: 5e-4,  workers: 8,  gradAccum: 4 },
+  max:    { batchSize: 2, seqLen: 48, lr: 8e-4,  workers: 11, gradAccum: 8 },
 };
 
 export const WORKER_DEFINITIONS = [
-  { id: 1,  name: "Language Worker",    type: "language",    category: "language"    },
-  { id: 2,  name: "Code Worker",        type: "code",        category: "coding"      },
-  { id: 3,  name: "Math Worker",        type: "math",        category: "math"        },
-  { id: 4,  name: "Reasoning Worker",   type: "reasoning",   category: "reasoning"   },
-  { id: 5,  name: "Science Worker",     type: "science",     category: "science"     },
-  { id: 6,  name: "Vision Worker",      type: "vision",      category: "language"    },
-  { id: 7,  name: "Instruction Worker", type: "instruction", category: "instruction" },
-  { id: 8,  name: "Dataset Worker",     type: "dataset",     category: "language"    },
-  { id: 9,  name: "Tokenizer Worker",   type: "tokenizer",   category: "language"    },
+  { id: 1,  name: "Language Worker 1",  type: "language",    category: "language"    },
+  { id: 2,  name: "Language Worker 2",  type: "language",    category: "language"    },
+  { id: 3,  name: "Language Worker 3",  type: "language",    category: "language"    },
+  { id: 4,  name: "Language Worker 4",  type: "language",    category: "language"    },
+  { id: 5,  name: "Code Worker",        type: "code",        category: "coding"      },
+  { id: 6,  name: "Math Worker",        type: "math",        category: "math"        },
+  { id: 7,  name: "Reasoning Worker",   type: "reasoning",   category: "reasoning"   },
+  { id: 8,  name: "Science Worker",     type: "science",     category: "science"     },
+  { id: 9,  name: "Instruction Worker", type: "instruction", category: "instruction" },
   { id: 10, name: "Validation Worker",  type: "validation",  category: "language"    },
   { id: 11, name: "Checkpoint Worker",  type: "checkpoint",  category: "language"    },
 ] as const;

@@ -1,0 +1,119 @@
+/**
+ * weights-io.ts
+ *
+ * Handles saving/loading Babis M1 model weights to/from disk as JSON files.
+ * - Auto-creates the checkpoint directory if it doesn't exist.
+ * - Auto-creates a "latest" pointer file so restores are fast (no DB lookup needed).
+ * - findLatestCheckpointFile() returns null if no checkpoint exists yet — the
+ *   caller (engine.ts) is responsible for creating fresh weights in that case.
+ */
+
+import fs from "fs/promises";
+import path from "path";
+import type { ModelWeights, LayerWeights } from "./transformer.js";
+
+export const CHECKPOINT_DIR =
+  process.env.CHECKPOINT_DIR ?? path.resolve(process.cwd(), "data", "checkpoints");
+
+const LATEST_POINTER_FILE = "latest.json";
+
+async function ensureDir(): Promise<void> {
+  await fs.mkdir(CHECKPOINT_DIR, { recursive: true });
+}
+
+interface SerializedLayer {
+  Wq: number[]; Wk: number[]; Wv: number[]; Wo: number[];
+  Wgate: number[]; Wup: number[]; Wdown: number[];
+  rms1: number[]; rms2: number[];
+}
+
+interface SerializedWeights {
+  tokenEmbed: number[];
+  finalRmsGamma: number[];
+  layers: SerializedLayer[];
+}
+
+function toArray(f: Float32Array): number[] {
+  return Array.from(f);
+}
+
+function serialize(weights: ModelWeights): SerializedWeights {
+  return {
+    tokenEmbed: toArray(weights.tokenEmbed),
+    finalRmsGamma: toArray(weights.finalRmsGamma),
+    layers: weights.layers.map((l): SerializedLayer => ({
+      Wq: toArray(l.Wq), Wk: toArray(l.Wk), Wv: toArray(l.Wv), Wo: toArray(l.Wo),
+      Wgate: toArray(l.Wgate), Wup: toArray(l.Wup), Wdown: toArray(l.Wdown),
+      rms1: toArray(l.rms1), rms2: toArray(l.rms2),
+    })),
+  };
+}
+
+function deserialize(data: SerializedWeights): ModelWeights {
+  const tokenEmbed = Float32Array.from(data.tokenEmbed);
+  const finalRmsGamma = Float32Array.from(data.finalRmsGamma);
+  const layers: LayerWeights[] = data.layers.map(l => ({
+    Wq: Float32Array.from(l.Wq), Wk: Float32Array.from(l.Wk),
+    Wv: Float32Array.from(l.Wv), Wo: Float32Array.from(l.Wo),
+    Wgate: Float32Array.from(l.Wgate), Wup: Float32Array.from(l.Wup),
+    Wdown: Float32Array.from(l.Wdown),
+    rms1: Float32Array.from(l.rms1), rms2: Float32Array.from(l.rms2),
+  }));
+
+  return {
+    tokenEmbed,
+    layers,
+    finalRmsGamma,
+    lmHead: tokenEmbed,
+  };
+}
+
+export async function saveWeightsToDisk(
+  weights: ModelWeights,
+  filename: string,
+): Promise<string> {
+  await ensureDir();
+  const filePath = path.join(CHECKPOINT_DIR, filename);
+  const payload = serialize(weights);
+  await fs.writeFile(filePath, JSON.stringify(payload));
+
+  await fs.writeFile(
+    path.join(CHECKPOINT_DIR, LATEST_POINTER_FILE),
+    JSON.stringify({ filename, savedAt: new Date().toISOString() }),
+  );
+
+  return filePath;
+}
+
+export async function loadWeightsFromDisk(filePath: string): Promise<ModelWeights> {
+  const raw = await fs.readFile(filePath, "utf-8");
+  const data = JSON.parse(raw) as SerializedWeights;
+  return deserialize(data);
+}
+
+export async function findLatestCheckpointFile(): Promise<string | null> {
+  await ensureDir();
+
+  try {
+    const pointerRaw = await fs.readFile(path.join(CHECKPOINT_DIR, LATEST_POINTER_FILE), "utf-8");
+    const pointer = JSON.parse(pointerRaw) as { filename: string };
+    const candidate = path.join(CHECKPOINT_DIR, pointer.filename);
+    await fs.access(candidate);
+    return candidate;
+  } catch {
+    // fall through to directory scan
+  }
+
+  const files = (await fs.readdir(CHECKPOINT_DIR)).filter(
+    f => f.endsWith(".json") && f !== LATEST_POINTER_FILE && f !== "state.json",
+  );
+  if (files.length === 0) return null;
+
+  const stepOf = (f: string) => Number(f.match(/step(\d+)/)?.[1] ?? 0);
+  files.sort((a, b) => stepOf(b) - stepOf(a));
+  return path.join(CHECKPOINT_DIR, files[0]);
+}
+
+export async function hasAnyCheckpoint(): Promise<boolean> {
+  return (await findLatestCheckpointFile()) !== null;
+}

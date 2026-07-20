@@ -49,7 +49,6 @@ router.post("/datasets/generate", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: "category required" }); return; }
   const { category, count = 100 } = parsed.data;
 
-  datasetGenerator.addSamples(category as any, count);
   const stats = datasetGenerator.getStats();
   const catStats = stats[category as keyof typeof stats];
 

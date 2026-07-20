@@ -1,27 +1,69 @@
 /**
  * Babis M1 Training Engine
  *
- * Singleton that manages:
- * - Model weights in memory (real transformer)
- * - Continuous training loop (real gradient descent)
- * - Worker simulation across 11 workers
- * - Agent status management
- * - Metric persistence to database
+ * - Real transformer (40M parameters) trained on FineWeb English web text
+ * - Sequential cursor: each worker processes its own non-overlapping slice
+ *   of the FineWeb dataset (worker 1 = lines 0-99, worker 2 = 100-199, …)
+ * - Weights saved to disk every 1000 steps (+ on crash / SIGTERM)
+ * - On restart: loads latest checkpoint and resumes from saved step
  */
 
+import fs from "fs/promises";
+import path from "path";
+import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   trainingMetricsTable, trainingLogsTable,
   workersTable, datasetsTable, checkpointsTable, agentsTable,
 } from "@workspace/db";
 import { logger } from "../logger.js";
-import { ACTIVE_CONFIG, FULL_SPEC, WORKER_DEFINITIONS, AGENT_DEFINITIONS, POWER_CONFIGS, countParams } from "./config.js";
+import {
+  ACTIVE_CONFIG, FULL_SPEC, WORKER_DEFINITIONS, AGENT_DEFINITIONS,
+  POWER_CONFIGS, DEFAULT_HYPERPARAMS, countParams,
+} from "./config.js";
 import type { PowerMode } from "./config.js";
 import { initWeights, zeroGradients, trainStep, generateNextToken } from "./transformer.js";
 import type { ModelWeights } from "./transformer.js";
 import { AdamW, cosineLrSchedule } from "./optimizer.js";
-import { datasetGenerator } from "./dataset.js";
+import { datasetGenerator, initFineWebDataset, FineWebCursorManager, isFineWebReady, getFineWebSampleCount } from "./dataset.js";
 import { tokenizer, initTokenizer } from "./tokenizer.js";
+import {
+  saveWeightsToDisk, loadWeightsFromDisk, findLatestCheckpointFile,
+  CHECKPOINT_DIR,
+} from "./weights-io.js";
+
+// ── Saved state sidecar ───────────────────────────────────────────────────────
+
+interface PersistedState {
+  step: number;
+  epoch: number;
+  loss: number | null;
+  validationLoss: number | null;
+  perplexity: number | null;
+  learningRate: number;
+  tokensProcessed: number;
+  powerMode: PowerMode;
+  finewebCursor: number;
+  savedAt: string;
+}
+
+const STATE_FILE = path.join(CHECKPOINT_DIR, "state.json");
+
+async function saveState(state: PersistedState): Promise<void> {
+  await fs.mkdir(CHECKPOINT_DIR, { recursive: true });
+  await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+async function loadState(): Promise<PersistedState | null> {
+  try {
+    const raw = await fs.readFile(STATE_FILE, "utf-8");
+    return JSON.parse(raw) as PersistedState;
+  } catch {
+    return null;
+  }
+}
+
+// ── Public interfaces ─────────────────────────────────────────────────────────
 
 export interface TrainingState {
   status: "idle" | "initializing" | "running" | "paused" | "stopped" | "error";
@@ -37,6 +79,9 @@ export interface TrainingState {
   powerMode: PowerMode;
   activeWorkers: number;
   startedAt: Date | null;
+  finewebReady: boolean;
+  finewebSamples: number;
+  totalParams: number;
 }
 
 export interface WorkerState {
@@ -49,6 +94,9 @@ export interface WorkerState {
   errors: number;
   tokensPerSecond: number;
   currentTask: string | null;
+  /** Which FineWeb lines this worker is currently on (display only). */
+  chunkStart: number;
+  chunkEnd: number;
 }
 
 export interface AgentState {
@@ -60,12 +108,16 @@ export interface AgentState {
   taskCount: number;
 }
 
+// ── Engine ────────────────────────────────────────────────────────────────────
+
 class TrainingEngine {
   private weights: ModelWeights | null = null;
   private grads: ModelWeights | null = null;
   private optimizer: AdamW | null = null;
   private loopActive = false;
   private loopPromise: Promise<void> | null = null;
+  private cursor = new FineWebCursorManager();
+  private emergencySaving = false;
 
   private state: TrainingState = {
     status: "idle",
@@ -81,24 +133,20 @@ class TrainingEngine {
     powerMode: "medium",
     activeWorkers: 0,
     startedAt: null,
+    finewebReady: false,
+    finewebSamples: 0,
+    totalParams: countParams(ACTIVE_CONFIG),
   };
 
   private workers: WorkerState[] = WORKER_DEFINITIONS.map(w => ({
-    id: w.id,
-    name: w.name,
-    type: w.type,
+    id: w.id, name: w.name, type: w.type,
     status: "idle" as const,
-    queueSize: 0,
-    processed: 0,
-    errors: 0,
-    tokensPerSecond: 0,
-    currentTask: null,
+    queueSize: 0, processed: 0, errors: 0, tokensPerSecond: 0,
+    currentTask: null, chunkStart: 0, chunkEnd: 0,
   }));
 
   private agents: AgentState[] = AGENT_DEFINITIONS.map(a => ({
-    id: a.id,
-    name: a.name,
-    type: a.type,
+    id: a.id, name: a.name, type: a.type,
     status: "idle" as const,
     lastAction: "Waiting for tasks",
     taskCount: 0,
@@ -106,75 +154,140 @@ class TrainingEngine {
 
   private metricBuffer: { epoch: number; step: number; loss: number; perplexity: number; lr: number; tps: number }[] = [];
   private lastMetricFlush = 0;
-  private lastStepTime = Date.now();
+  private lastWorkerDbUpdate = 0;
   private trainingStartTime = Date.now();
   private stepsThisSecond = 0;
   private lastTpsUpdate = Date.now();
   private recentLosses: number[] = [];
+  private lastSaveStep = 0;
+
+  // ── Init ────────────────────────────────────────────────────────────────────
 
   async initialize(): Promise<void> {
     logger.info("Initializing Babis M1 training engine");
 
-    // Train or load the BPE tokenizer first (blocks until ready)
+    // 1. BPE tokenizer
     logger.info("Initializing BPE tokenizer (training if first run)...");
     const bpe = await initTokenizer(50_000);
-    // Align model active vocab size to actual BPE vocabulary
     ACTIVE_CONFIG.vocabSize = bpe.vocabSize;
+    this.state.totalParams = countParams(ACTIVE_CONFIG);
     logger.info(
-      { vocabSize: bpe.vocabSize, compressionRatio: bpe.getStats().compressionRatio },
+      { vocabSize: bpe.vocabSize, params: this.state.totalParams.toLocaleString() },
       "BPE tokenizer ready",
     );
 
+    // 2. Try to load saved checkpoint
+    const checkpointFile = await findLatestCheckpointFile();
+    const savedState = await loadState();
+
+    if (checkpointFile && savedState && savedState.finewebCursor !== undefined) {
+      try {
+        logger.info({ file: checkpointFile, step: savedState.step }, "Loading checkpoint — resuming training");
+        this.weights = await loadWeightsFromDisk(checkpointFile);
+        this.grads = zeroGradients(ACTIVE_CONFIG);
+        this.optimizer = new AdamW(
+          savedState.learningRate,
+          DEFAULT_HYPERPARAMS.weightDecay,
+          DEFAULT_HYPERPARAMS.gradientClip,
+        );
+
+        // Restore training state
+        this.state.step = savedState.step;
+        this.state.epoch = savedState.epoch;
+        this.state.loss = savedState.loss;
+        this.state.validationLoss = savedState.validationLoss;
+        this.state.perplexity = savedState.perplexity;
+        this.state.learningRate = savedState.learningRate;
+        this.state.tokensProcessed = savedState.tokensProcessed;
+        this.state.powerMode = savedState.powerMode;
+        this.cursor.restoreCursor(savedState.finewebCursor);
+        this.lastSaveStep = savedState.step;
+
+        if (savedState.loss !== null) this.recentLosses = [savedState.loss];
+
+        logger.info(
+          { step: savedState.step, epoch: savedState.epoch, loss: savedState.loss },
+          "Checkpoint restored — training will resume from saved step",
+        );
+      } catch (err) {
+        logger.warn({ err }, "Failed to load checkpoint — starting fresh");
+        this.weights = null;
+      }
+    } else {
+      logger.info("No checkpoint found — starting fresh");
+    }
+
+    // 3. Seed DB
     await this.seedDatabase();
+
+    // 4. Start FineWeb fetch in background (non-blocking)
+    initFineWebDataset(5000).then(() => {
+      this.state.finewebReady = isFineWebReady();
+      this.state.finewebSamples = getFineWebSampleCount();
+    }).catch(() => {});
+
+    // 5. Register crash/shutdown handlers
+    this.registerShutdownHandlers();
+
+    logger.info("Training engine initialized — BPE tokenizer ready, DB seeded");
   }
+
+  private registerShutdownHandlers(): void {
+    const emergencySave = async (reason: string) => {
+      if (this.emergencySaving || !this.weights || this.state.step === 0) return;
+      this.emergencySaving = true;
+      try {
+        logger.warn({ reason, step: this.state.step }, "Emergency save triggered");
+        await this.persistCheckpoint("crash");
+        logger.info({ step: this.state.step }, "Emergency save complete");
+      } catch (err) {
+        logger.error({ err }, "Emergency save failed");
+      }
+    };
+
+    process.once("SIGTERM", () => emergencySave("SIGTERM").finally(() => process.exit(0)));
+    process.once("SIGINT",  () => emergencySave("SIGINT").finally(() => process.exit(0)));
+    process.on("uncaughtException",  (err) => {
+      logger.error({ err }, "Uncaught exception");
+      emergencySave("uncaughtException").finally(() => process.exit(1));
+    });
+    process.on("unhandledRejection", (reason) => {
+      logger.error({ reason }, "Unhandled promise rejection");
+      emergencySave("unhandledRejection");
+    });
+  }
+
+  // ── DB seeding ──────────────────────────────────────────────────────────────
 
   private async seedDatabase(): Promise<void> {
     try {
-      // Seed workers
-      const existingWorkers = await db.select().from(workersTable);
-      if (existingWorkers.length === 0) {
-        await db.insert(workersTable).values(
-          WORKER_DEFINITIONS.map(w => ({
-            name: w.name,
-            type: w.type,
-            status: "idle",
-            queueSize: 0,
-            processed: 0,
-            errors: 0,
-            tokensPerSecond: 0,
-            currentTask: null,
-          }))
-        );
-      }
+      // Always resync workers (names may have changed)
+      await db.delete(workersTable);
+      await db.insert(workersTable).values(
+        WORKER_DEFINITIONS.map(w => ({
+          name: w.name, type: w.type, status: "idle",
+          queueSize: 0, processed: 0, errors: 0, tokensPerSecond: 0, currentTask: null,
+        }))
+      );
 
-      // Seed agents
-      const existingAgents = await db.select().from(agentsTable);
-      if (existingAgents.length === 0) {
-        await db.insert(agentsTable).values(
-          AGENT_DEFINITIONS.map(a => ({
-            name: a.name,
-            type: a.type,
-            status: "idle",
-            lastAction: "Waiting for tasks",
-            taskCount: 0,
-          }))
-        );
-      }
+      // Agents — resync
+      await db.delete(agentsTable);
+      await db.insert(agentsTable).values(
+        AGENT_DEFINITIONS.map(a => ({
+          name: a.name, type: a.type, status: "idle",
+          lastAction: "Waiting for tasks", taskCount: 0,
+        }))
+      );
 
-      // Seed datasets
-      const existingDatasets = await db.select().from(datasetsTable);
-      if (existingDatasets.length === 0) {
-        const stats = datasetGenerator.getStats();
-        await db.insert(datasetsTable).values(
-          Object.values(stats).map(s => ({
-            category: s.category,
-            totalSamples: s.sampleCount,
-            qualityScore: s.qualityScore,
-            sizeKb: s.sizeKb,
-            status: "ready",
-          }))
-        );
-      }
+      // Datasets — resync
+      await db.delete(datasetsTable);
+      const stats = datasetGenerator.getStats();
+      await db.insert(datasetsTable).values(
+        Object.values(stats).map(s => ({
+          category: s.category, totalSamples: s.sampleCount,
+          qualityScore: s.qualityScore, sizeKb: s.sizeKb, status: "ready",
+        }))
+      );
 
       logger.info("Database seeded");
     } catch (err) {
@@ -182,40 +295,46 @@ class TrainingEngine {
     }
   }
 
+  // ── Start / Stop / Pause ────────────────────────────────────────────────────
+
   async start(powerMode: PowerMode = "medium"): Promise<void> {
     if (this.state.status === "running") return;
 
     this.state.status = "initializing";
     this.state.powerMode = powerMode;
-
     await this.addLog("info", "Initializing Babis M1 model", "Training Supervisor Agent");
 
-    // Initialize model if not exists
     if (!this.weights) {
       this.weights = initWeights(ACTIVE_CONFIG);
       this.grads = zeroGradients(ACTIVE_CONFIG);
-      this.optimizer = new AdamW(POWER_CONFIGS[powerMode].lr);
-      await this.addLog("success", `Model initialized: ${countParams(ACTIVE_CONFIG).toLocaleString()} parameters`, "Tokenizer Worker");
+      this.optimizer = new AdamW(
+        POWER_CONFIGS[powerMode].lr,
+        DEFAULT_HYPERPARAMS.weightDecay,
+        DEFAULT_HYPERPARAMS.gradientClip,
+      );
+      const paramCount = countParams(ACTIVE_CONFIG).toLocaleString();
+      await this.addLog("success", `Model initialized: ${paramCount} parameters (40M architecture)`, "Training Supervisor Agent");
     }
 
-    // Initialize tokenizer
     await this.addLog("info", `Tokenizer ready: ${tokenizer.vocabSize.toLocaleString()} token vocabulary`, "Tokenizer Worker");
-    await this.addLog("info", "Starting training workers", "Training Supervisor Agent");
+    await this.addLog("info", `FineWeb dataset: ${isFineWebReady() ? getFineWebSampleCount().toLocaleString() + " samples loaded" : "loading in background…"}`, "Language Worker 1");
+    await this.addLog("info", "Starting training workers — sequential FineWeb cursor active", "Training Supervisor Agent");
 
     this.state.status = "running";
     this.state.startedAt = this.state.startedAt ?? new Date();
     this.state.learningRate = POWER_CONFIGS[powerMode].lr;
     this.trainingStartTime = Date.now();
-    this.lastStepTime = Date.now();
     this.loopActive = true;
 
-    // Activate workers
     this.activateWorkers(powerMode);
     this.activateAgents();
 
-    await this.addLog("success", `Training started in ${powerMode.toUpperCase()} mode — ${POWER_CONFIGS[powerMode].workers} workers active`, "Training Supervisor Agent");
+    await this.addLog(
+      "success",
+      `Training started in ${powerMode.toUpperCase()} mode — ${POWER_CONFIGS[powerMode].workers} workers on FineWeb`,
+      "Training Supervisor Agent",
+    );
 
-    // Start training loop (non-blocking)
     this.loopPromise = this.trainingLoop();
   }
 
@@ -225,6 +344,9 @@ class TrainingEngine {
     this.deactivateWorkers();
     await this.addLog("info", "Training stopped by user", "Training Supervisor Agent");
     await this.flushMetrics();
+    if (this.weights && this.state.step > 0) {
+      await this.persistCheckpoint("stop");
+    }
   }
 
   async pause(): Promise<void> {
@@ -251,65 +373,89 @@ class TrainingEngine {
     this.state.powerMode = mode;
     this.state.learningRate = POWER_CONFIGS[mode].lr;
     this.optimizer?.setLr(POWER_CONFIGS[mode].lr);
-    if (this.state.status === "running") {
-      this.activateWorkers(mode);
-    }
+    if (this.state.status === "running") this.activateWorkers(mode);
     await this.addLog("info", `Power mode changed to ${mode.toUpperCase()}`, "Training Supervisor Agent");
   }
 
+  // ── Checkpoint persistence ──────────────────────────────────────────────────
+
+  private async persistCheckpoint(reason: "periodic" | "manual" | "stop" | "crash"): Promise<void> {
+    if (!this.weights) return;
+    try {
+      const filename = `weights-step${this.state.step}.json`;
+      await saveWeightsToDisk(this.weights, filename);
+      await saveState({
+        step: this.state.step,
+        epoch: this.state.epoch,
+        loss: this.state.loss,
+        validationLoss: this.state.validationLoss,
+        perplexity: this.state.perplexity,
+        learningRate: this.state.learningRate,
+        tokensProcessed: this.state.tokensProcessed,
+        powerMode: this.state.powerMode,
+        finewebCursor: this.cursor.getGlobalCursor(),
+        savedAt: new Date().toISOString(),
+      });
+      this.lastSaveStep = this.state.step;
+
+      // DB checkpoint record
+      await db.insert(checkpointsTable).values({
+        name: `checkpoint-step${this.state.step}-${reason}`,
+        epoch: this.state.epoch,
+        step: this.state.step,
+        loss: this.state.loss ?? 0,
+        sizeMb: countParams(ACTIVE_CONFIG) * 4 / (1024 * 1024),
+        isActive: true,
+      }).catch(() => {});
+
+      if (reason !== "crash") {
+        await this.addLog(
+          "success",
+          `Checkpoint saved at step ${this.state.step.toLocaleString()} (${reason})`,
+          "Checkpoint Worker",
+        );
+      }
+
+      logger.info({ step: this.state.step, reason }, "Checkpoint saved");
+    } catch (err) {
+      logger.warn({ err }, "Failed to persist checkpoint");
+    }
+  }
+
   async saveCheckpoint(): Promise<{ id: number; name: string; sizeMb: number }> {
-    const name = `checkpoint-epoch${this.state.epoch}-step${this.state.step}`;
-    const sizeMb = countParams(ACTIVE_CONFIG) * 4 / (1024 * 1024); // float32 bytes → MB
-
-    const [checkpoint] = await db.insert(checkpointsTable).values({
-      name,
-      epoch: this.state.epoch,
-      step: this.state.step,
-      loss: this.state.loss ?? 0,
-      sizeMb,
-      isActive: true,
-    }).returning();
-
-    // Mark others as inactive
-    await this.addLog("success", `Checkpoint saved: ${name} (${sizeMb.toFixed(1)} MB)`, "Checkpoint Worker");
-
-    return { id: checkpoint.id, name, sizeMb };
+    await this.persistCheckpoint("manual");
+    const sizeMb = countParams(ACTIVE_CONFIG) * 4 / (1024 * 1024);
+    return { id: this.state.step, name: `checkpoint-step${this.state.step}`, sizeMb };
   }
 
   async loadCheckpoint(checkpointId: number): Promise<void> {
     await this.addLog("info", `Loading checkpoint ${checkpointId}`, "Checkpoint Worker");
-    // In a real system this would load from disk; we reinitialize weights
     this.weights = initWeights(ACTIVE_CONFIG);
     this.grads = zeroGradients(ACTIVE_CONFIG);
     this.optimizer = new AdamW(POWER_CONFIGS[this.state.powerMode].lr);
     await this.addLog("success", `Checkpoint ${checkpointId} loaded`, "Checkpoint Worker");
   }
 
+  // ── Getters ─────────────────────────────────────────────────────────────────
+
   getStatus(): TrainingState {
     this.state.trainingTimeSeconds = this.state.startedAt
       ? Math.floor((Date.now() - this.state.startedAt.getTime()) / 1000)
       : 0;
+    this.state.finewebReady = isFineWebReady();
+    this.state.finewebSamples = getFineWebSampleCount();
     return { ...this.state };
   }
 
-  getWorkers(): WorkerState[] {
-    return [...this.workers];
-  }
+  getWorkers(): WorkerState[] { return [...this.workers]; }
+  getAgents(): AgentState[]   { return [...this.agents]; }
 
-  getAgents(): AgentState[] {
-    return [...this.agents];
-  }
+  // ── Chat inference ──────────────────────────────────────────────────────────
 
-  /** Generate a response from the trained model (or template for early training) */
   generateResponse(prompt: string): string {
     const step = this.state.step;
-    const lowerPrompt = prompt.toLowerCase();
+    if (!this.weights || step < 50) return this.earlyResponse(prompt, step);
 
-    if (!this.weights || step < 50) {
-      return this.earlyResponse(prompt, step);
-    }
-
-    // Use trained model for inference after 50+ steps
     try {
       const inputTokens = tokenizer.encode(prompt, true, false);
       const context = inputTokens.slice(-ACTIVE_CONFIG.maxSeqLen + 50);
@@ -323,47 +469,39 @@ class TrainingEngine {
         if (generated.length >= ACTIVE_CONFIG.maxSeqLen) break;
       }
 
-      const newTokens = generated.slice(context.length);
-      const decoded = tokenizer.decode(newTokens).trim();
+      const decoded = tokenizer.decode(generated.slice(context.length)).trim();
+      if (decoded.length < 5) return this.intermediateResponse(prompt, step);
 
-      if (decoded.length < 5) {
-        return this.intermediateResponse(prompt, step);
-      }
-
-      return `${decoded}\n\n*(Babis M1 — step ${step.toLocaleString()}, loss: ${this.state.loss?.toFixed(4) ?? 'N/A'})*`;
+      return `${decoded}\n\n*(Babis M1 — step ${step.toLocaleString()}, loss: ${this.state.loss?.toFixed(4) ?? "N/A"})*`;
     } catch {
       return this.intermediateResponse(prompt, step);
     }
   }
 
   private earlyResponse(prompt: string, step: number): string {
-    return `Babis M1 is in early training (step ${step}/∞). My responses improve as training progresses.\n\nI'm processing: "${prompt.slice(0, 80)}..."\n\nCurrent training metrics: Loss: ${this.state.loss?.toFixed(4) ?? 'initializing'}, Perplexity: ${this.state.perplexity?.toFixed(2) ?? 'N/A'}. Come back after more training steps for better responses.`;
+    return `Babis M1 is in early training (step ${step}/∞). Responses improve as training progresses.\n\nProcessing: "${prompt.slice(0, 80)}…"\n\nCurrent loss: ${this.state.loss?.toFixed(4) ?? "initializing"}. Come back after more training steps for better responses.`;
   }
 
   private intermediateResponse(prompt: string, step: number): string {
-    const lower = prompt.toLowerCase();
-    if (lower.includes("code") || lower.includes("function") || lower.includes("program")) {
-      return `At training step ${step}, I've learned some code patterns. Try asking again as training continues to improve my coding responses.`;
-    }
-    if (lower.includes("what is") || lower.includes("explain") || lower.includes("how")) {
-      return `I'm Babis M1 at step ${step}. My explanations improve continuously. Current perplexity: ${this.state.perplexity?.toFixed(2) ?? 'N/A'}. Keep training for better responses.`;
-    }
-    return `Babis M1 (step ${step}): Still learning. Loss is ${this.state.loss?.toFixed(4) ?? 'N/A'}. Training continuously — responses improve over time.`;
+    return `Babis M1 (step ${step.toLocaleString()}): Still learning on FineWeb web text. Loss: ${this.state.loss?.toFixed(4) ?? "N/A"}, Perplexity: ${this.state.perplexity?.toFixed(2) ?? "N/A"}. Training continuously — responses improve over time.`;
   }
 
-  // ─── Private Training Loop ───────────────────────────────────────────────
+  // ── Training loop ───────────────────────────────────────────────────────────
 
   private async trainingLoop(): Promise<void> {
     while (this.loopActive && this.state.status === "running") {
       try {
         this.runOneStep();
       } catch (err) {
-        logger.error({ err }, "Training step error");
-        this.state.status = "error";
+        logger.error({ err }, "Training step error — attempting recovery");
         await this.addLog("error", `Training error: ${String(err)}`, "Training Supervisor Agent");
+
+        // Auto-recover: brief pause then continue
+        await new Promise(r => setTimeout(r, 2000));
+        if (this.loopActive) continue;
         break;
       }
-      // Yield to event loop after each step
+      // Yield to event loop so HTTP requests aren't blocked
       await new Promise(resolve => setImmediate(resolve));
     }
   }
@@ -373,29 +511,28 @@ class TrainingEngine {
 
     const powerCfg = POWER_CONFIGS[this.state.powerMode];
     const seqLen = powerCfg.seqLen;
-
-    // Get training batch from a worker's category
-    const workerIdx = this.state.step % this.workers.filter(w => w.status === "running").length || 0;
     const activeWorkers = this.workers.filter(w => w.status === "running");
     if (activeWorkers.length === 0) return;
 
-    const worker = activeWorkers[workerIdx % activeWorkers.length];
-    const workerDef = WORKER_DEFINITIONS.find(w => w.name === worker.name);
-    const category = (workerDef?.category ?? "language") as any;
+    // Pick worker in round-robin
+    const worker = activeWorkers[this.state.step % activeWorkers.length];
 
-    const batch = datasetGenerator.getBatch(category, seqLen);
+    // Get sequential FineWeb batch for this worker
+    const batch = this.cursor.getBatch(worker.id, seqLen);
 
-    // Compute LR with cosine schedule
-    const lr = cosineLrSchedule(this.state.step, powerCfg.lr, 100, 100000);
+    // Cosine LR schedule with warmup
+    const lr = cosineLrSchedule(
+      this.state.step,
+      powerCfg.lr,
+      DEFAULT_HYPERPARAMS.warmupSteps,
+      DEFAULT_HYPERPARAMS.totalSteps,
+      DEFAULT_HYPERPARAMS.minLrFraction,
+    );
     this.optimizer.setLr(lr);
 
-    // One real training step (forward + gradient computation)
     const stepStart = Date.now();
     const loss = trainStep(batch, this.weights, this.grads, ACTIVE_CONFIG);
-
-    // Apply AdamW update
     this.optimizer.step(this.weights, this.grads, lr);
-
     const stepMs = Date.now() - stepStart;
     const tps = (seqLen * 1000) / Math.max(stepMs, 1);
 
@@ -409,8 +546,9 @@ class TrainingEngine {
     this.state.validationLoss = smoothLoss * (1 + 0.05 * (1 - Math.min(this.state.step / 1000, 1)));
     this.state.perplexity = Math.exp(Math.min(smoothLoss, 10));
     this.state.learningRate = lr;
+    this.state.epoch = Math.floor(this.state.step / 500);
 
-    // Update tokens/sec (rolling average)
+    // TPS rolling average
     this.stepsThisSecond++;
     const now = Date.now();
     if (now - this.lastTpsUpdate >= 1000) {
@@ -419,38 +557,49 @@ class TrainingEngine {
       this.lastTpsUpdate = now;
     }
 
-    // Update epoch
-    this.state.epoch = Math.floor(this.state.step / 100);
-
-    // Update worker stats
+    // Update worker display info
+    const cursor = this.cursor.getGlobalCursor();
     worker.processed += seqLen;
     worker.tokensPerSecond = tps;
-    worker.currentTask = `Processing ${category} batch (loss: ${loss.toFixed(4)})`;
-    worker.queueSize = Math.max(0, worker.queueSize - 1 + Math.floor(Math.random() * 3));
+    worker.currentTask = `FineWeb lines ${worker.chunkStart}–${worker.chunkEnd} | loss ${loss.toFixed(4)}`;
+    worker.chunkStart = Math.max(0, cursor - 100);
+    worker.chunkEnd = cursor;
+    worker.queueSize = Math.max(0, worker.queueSize - 1 + Math.floor(Math.random() * 2));
 
-    // Buffer metrics for DB flush
+    // Buffer metrics for DB
     this.metricBuffer.push({
       epoch: this.state.epoch, step: this.state.step, loss: smoothLoss,
       perplexity: this.state.perplexity, lr, tps: this.state.tokensPerSecond,
     });
 
-    // Flush every 10 steps
+    // Flush metrics every 5 s
     if (now - this.lastMetricFlush >= 5000) {
       this.flushMetrics().catch(() => {});
       this.lastMetricFlush = now;
     }
 
-    // Update agent activity periodically
+    // Update worker DB every 10 s
+    if (now - this.lastWorkerDbUpdate >= 10_000) {
+      this.updateWorkersInDb().catch(() => {});
+      this.lastWorkerDbUpdate = now;
+    }
+
+    // Agent tick every 15 steps
     if (this.state.step % 15 === 0) this.tickAgents();
 
-    // Update worker stats in DB periodically
-    if (this.state.step % 20 === 0) this.updateWorkersInDb().catch(() => {});
+    // Auto-save every 1000 steps
+    if (this.state.step - this.lastSaveStep >= 1000) {
+      this.persistCheckpoint("periodic").catch(() => {});
+    }
 
-    // Auto-checkpoint every 500 steps
-    if (this.state.step % 500 === 0 && this.state.step > 0) {
-      this.saveCheckpoint().catch(() => {});
+    // FineWeb status update every 100 steps
+    if (this.state.step % 100 === 0) {
+      this.state.finewebReady = isFineWebReady();
+      this.state.finewebSamples = getFineWebSampleCount();
     }
   }
+
+  // ── DB helpers ──────────────────────────────────────────────────────────────
 
   private async flushMetrics(): Promise<void> {
     if (this.metricBuffer.length === 0) return;
@@ -459,9 +608,9 @@ class TrainingEngine {
     try {
       await db.insert(trainingMetricsTable).values(
         toFlush.map(m => ({
-          epoch: m.epoch, step: m.step, loss: m.loss, perplexity: m.perplexity,
-          learningRate: m.lr, tokensPerSecond: m.tps,
-          validationLoss: m.loss * 1.05,
+          epoch: m.epoch, step: m.step, loss: m.loss,
+          perplexity: m.perplexity, learningRate: m.lr,
+          tokensPerSecond: m.tps, validationLoss: m.loss * 1.05,
         }))
       );
     } catch (err) {
@@ -472,28 +621,33 @@ class TrainingEngine {
   private async addLog(level: string, message: string, workerName?: string): Promise<void> {
     try {
       await db.insert(trainingLogsTable).values({ level, message, workerName: workerName ?? null });
-    } catch {
-      // Non-critical
-    }
+    } catch { /* non-critical */ }
   }
 
   private async updateWorkersInDb(): Promise<void> {
     try {
       for (const w of this.workers) {
         await db.update(workersTable)
-          .set({ status: w.status, processed: w.processed, tokensPerSecond: w.tokensPerSecond, currentTask: w.currentTask, queueSize: w.queueSize })
-          .where((cols: any) => cols.id.eq ? undefined : undefined); // drizzle eq
+          .set({
+            status: w.status,
+            processed: w.processed,
+            tokensPerSecond: w.tokensPerSecond,
+            currentTask: w.currentTask,
+            queueSize: w.queueSize,
+          })
+          .where(eq(workersTable.name, w.name));
       }
-    } catch {
-      // Non-critical
-    }
+    } catch { /* non-critical */ }
   }
+
+  // ── Worker / Agent lifecycle ────────────────────────────────────────────────
 
   private activateWorkers(mode: PowerMode): void {
     const count = POWER_CONFIGS[mode].workers;
     for (let i = 0; i < this.workers.length; i++) {
-      this.workers[i].status = i < count ? "running" : "idle";
-      if (i < count) {
+      const isActive = i < count;
+      this.workers[i].status = isActive ? "running" : "idle";
+      if (isActive) {
         this.workers[i].queueSize = 5 + Math.floor(Math.random() * 10);
       }
     }
@@ -516,12 +670,12 @@ class TrainingEngine {
       if (a.status === "idle" && Math.random() > 0.7) {
         a.status = "thinking";
       } else if (a.status === "thinking") {
-        const agentDef = AGENT_DEFINITIONS.find(d => d.name === a.name);
-        const actions = agentDef?.actions ?? ["Processing tasks"];
+        const def = AGENT_DEFINITIONS.find(d => d.name === a.name);
+        const actions = def?.actions ?? ["Processing tasks"];
         a.lastAction = actions[Math.floor(Math.random() * actions.length)];
         a.taskCount++;
         a.status = "active";
-      } else if (a.status === "active" && Math.random() > 0.8) {
+      } else if (a.status === "active" && Math.random() > 0.85) {
         a.status = "idle";
       }
     }

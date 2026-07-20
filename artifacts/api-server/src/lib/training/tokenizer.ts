@@ -13,9 +13,6 @@ export {
   initTokenizer,
   getTokenizer,
   BPETokenizer,
-  BYTE_ENC,
-  BYTE_DEC,
-  SPECIAL_TOKENS as BPE_SPECIAL_TOKENS,
 } from "./tokenizer/BPETokenizer.js";
 
 export type { TokenizerStats } from "./tokenizer/BPETokenizer.js";
