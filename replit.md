@@ -1,6 +1,6 @@
-# [Project name]
+# Babis M1 — Autonomous Multimodal AI Platform
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A full-stack AI platform with a training dashboard, chat interface, model management, dataset tools, and real-time monitoring.
 
 ## Run & Operate
 
