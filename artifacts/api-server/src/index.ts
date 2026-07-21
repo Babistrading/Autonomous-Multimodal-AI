@@ -23,12 +23,9 @@ if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${raw
 
 // ─── Process stability ────────────────────────────────────────────────────────
 //
-// These three guards ensure the server stays up 24/7:
-//
-// 1. uncaughtException — catches synchronous throws that escape all try/catch
-// 2. unhandledRejection — catches async Promise rejections with no handler
-// 3. setInterval keep-alive — prevents Node.js from exiting when the event loop
-//    runs dry (e.g., between training steps with no pending I/O)
+// 1. uncaughtException / unhandledRejection — keeps process alive on any throw
+// 2. _keepAlive setInterval — prevents Node.js from exiting when event loop empties
+// 3. _watchdog setInterval — detects a stalled training loop and restarts it
 
 process.on("uncaughtException", (err) => {
   logger.error({ err }, "Uncaught exception — server continues running");
@@ -41,6 +38,28 @@ process.on("unhandledRejection", (reason) => {
 // Heartbeat: keeps the event loop non-empty so Node.js never exits on its own.
 const _keepAlive = setInterval(() => {
   // Silent no-op — just holds the process open.
+}, 5_000);
+
+// Watchdog: if the training loop has produced no new step for 20 seconds while
+// the engine believes it is running, kick it back to life.
+let _watchdogLastStep = 0;
+const _watchdog = setInterval(() => {
+  try {
+    const status = trainingEngine.getStatus();
+    if (status.status !== "running") return;
+
+    const now = Date.now();
+    const lastStep = trainingEngine.getLastStepTime();
+    const currentStep = status.step;
+
+    // Stall detected: step count hasn't changed AND last step was >20 s ago
+    if (currentStep === _watchdogLastStep && lastStep > 0 && now - lastStep > 20_000) {
+      logger.warn({ step: currentStep, idleSec: Math.floor((now - lastStep) / 1000) },
+        "Watchdog: training stall detected — kicking loop");
+      trainingEngine.kickLoop();
+    }
+    _watchdogLastStep = currentStep;
+  } catch { /* watchdog must never crash */ }
 }, 10_000);
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
@@ -48,6 +67,7 @@ const _keepAlive = setInterval(() => {
 const shutdown = async (signal: string) => {
   logger.info({ signal }, "Shutdown signal received — saving checkpoint then exiting");
   clearInterval(_keepAlive);
+  clearInterval(_watchdog);
   try {
     await trainingEngine.emergencySave();
   } catch (err) {
@@ -83,6 +103,7 @@ async function bootTraining(attempt = 1): Promise<void> {
     // 2. Start the continuous training loop.
     //    The engine's internal setImmediate loop runs forever, yielding between
     //    steps so the event loop (and HTTP requests) stay responsive.
+    //    The loop is self-healing: if it exits unexpectedly it restarts itself.
     await trainingEngine.start("max");
     logger.info("✓ Training loop active — Babis M1 is learning 24/7");
 

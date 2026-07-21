@@ -116,6 +116,7 @@ class TrainingEngine {
   private optimizer: AdamW | null = null;
   private loopActive = false;
   private loopPromise: Promise<void> | null = null;
+  private lastStepTime = 0;
   private cursor = new FineWebCursorManager();
   private emergencySaving = false;
 
@@ -226,8 +227,7 @@ class TrainingEngine {
       this.state.finewebSamples = getFineWebSampleCount();
     }).catch(() => {});
 
-    // 5. Register crash/shutdown handlers
-    this.registerShutdownHandlers();
+    // 5. Shutdown handlers live in index.ts — no double-registration here.
 
     logger.info("Training engine initialized — BPE tokenizer ready, DB seeded");
   }
@@ -247,13 +247,7 @@ class TrainingEngine {
     }
   }
 
-  // NOTE: uncaughtException / unhandledRejection are intentionally NOT registered
-  // here — index.ts owns those handlers and keeps the process alive.
-  // Only register SIGTERM / SIGINT so we can flush weights before a clean exit.
-  private registerShutdownHandlers(): void {
-    process.once("SIGTERM", () => this.emergencySave().finally(() => process.exit(0)));
-    process.once("SIGINT",  () => this.emergencySave().finally(() => process.exit(0)));
-  }
+  // Shutdown is handled entirely by index.ts to avoid double-registration.
 
   // ── DB seeding ──────────────────────────────────────────────────────────────
 
@@ -486,6 +480,10 @@ class TrainingEngine {
 
   // ── Training loop ───────────────────────────────────────────────────────────
 
+  /**
+   * Core training loop. Self-heals: if it exits while still supposed to be
+   * running (crash, uncaught throw), it waits 1 second and restarts itself.
+   */
   private async trainingLoop(): Promise<void> {
     while (this.loopActive && this.state.status === "running") {
       try {
@@ -496,12 +494,32 @@ class TrainingEngine {
 
         // Auto-recover: brief pause then continue
         await new Promise(r => setTimeout(r, 2000));
-        if (this.loopActive) continue;
-        break;
+        if (!this.loopActive) break;
       }
       // Yield to event loop so HTTP requests aren't blocked
       await new Promise(resolve => setImmediate(resolve));
     }
+
+    // Self-heal: if we exited the loop while still meant to be running,
+    // restart automatically after a short delay instead of silently stopping.
+    if (this.loopActive && this.state.status === "running") {
+      logger.warn("Training loop exited unexpectedly — self-healing restart in 1s");
+      await new Promise(r => setTimeout(r, 1_000));
+      this.loopPromise = this.trainingLoop();
+    }
+  }
+
+  /** Returns the timestamp of the last completed training step. */
+  getLastStepTime(): number { return this.lastStepTime; }
+
+  /**
+   * Watchdog kick: if the loop stalled (no step for >15 s while running),
+   * restart it. Called externally by the index.ts watchdog timer.
+   */
+  kickLoop(): void {
+    if (!this.loopActive || this.state.status !== "running") return;
+    logger.warn("Watchdog: training loop stall detected — restarting loop");
+    this.loopPromise = this.trainingLoop();
   }
 
   private runOneStep(): void {
@@ -535,6 +553,7 @@ class TrainingEngine {
     const tps = (seqLen * 1000) / Math.max(stepMs, 1);
 
     // Update state
+    this.lastStepTime = Date.now();
     this.state.step++;
     this.state.tokensProcessed += seqLen;
     this.recentLosses.push(loss);

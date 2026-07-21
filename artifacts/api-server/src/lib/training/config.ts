@@ -123,17 +123,17 @@ export const POWER_CONFIGS: Record<
 };
 
 export const WORKER_DEFINITIONS = [
-  { id: 1,  name: "Language Worker 1",  type: "language",    category: "language"    },
-  { id: 2,  name: "Language Worker 2",  type: "language",    category: "language"    },
-  { id: 3,  name: "Language Worker 3",  type: "language",    category: "language"    },
-  { id: 4,  name: "Language Worker 4",  type: "language",    category: "language"    },
-  { id: 5,  name: "Code Worker",        type: "code",        category: "coding"      },
-  { id: 6,  name: "Math Worker",        type: "math",        category: "math"        },
-  { id: 7,  name: "Reasoning Worker",   type: "reasoning",   category: "reasoning"   },
-  { id: 8,  name: "Science Worker",     type: "science",     category: "science"     },
-  { id: 9,  name: "Instruction Worker", type: "instruction", category: "instruction" },
-  { id: 10, name: "Validation Worker",  type: "validation",  category: "language"    },
-  { id: 11, name: "Checkpoint Worker",  type: "checkpoint",  category: "language"    },
+  { id: 1,  name: "Language Worker 1",  type: "language", category: "language" },
+  { id: 2,  name: "Language Worker 2",  type: "language", category: "language" },
+  { id: 3,  name: "Language Worker 3",  type: "language", category: "language" },
+  { id: 4,  name: "Language Worker 4",  type: "language", category: "language" },
+  { id: 5,  name: "Language Worker 5",  type: "language", category: "language" },
+  { id: 6,  name: "Language Worker 6",  type: "language", category: "language" },
+  { id: 7,  name: "Language Worker 7",  type: "language", category: "language" },
+  { id: 8,  name: "Language Worker 8",  type: "language", category: "language" },
+  { id: 9,  name: "Language Worker 9",  type: "language", category: "language" },
+  { id: 10, name: "Language Worker 10", type: "language", category: "language" },
+  { id: 11, name: "Language Worker 11", type: "language", category: "language" },
 ] as const;
 
 export const AGENT_DEFINITIONS = [
