@@ -1,0 +1,23 @@
+kind = "mobile"
+previewPath = "/babis-m1-mobile/"
+title = "Babis M1 Mobile"
+version = "1.0.0"
+id = "artifacts/babis-m1-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/babis-m1-mobile/" ]
+localPort = 25756
+
+[services.development]
+run = "pnpm --filter @workspace/babis-m1-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/babis-m1-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/babis-m1-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "25756"
+BASE_PATH = "/babis-m1-mobile/"
