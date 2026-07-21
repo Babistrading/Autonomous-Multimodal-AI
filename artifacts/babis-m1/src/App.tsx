@@ -11,6 +11,7 @@ import Workers from '@/pages/workers';
 import Datasets from '@/pages/datasets';
 import Agents from '@/pages/agents';
 import ModelInfo from '@/pages/model';
+import DownloadPage from '@/pages/download';
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ function Router() {
         <Route path="/datasets" component={Datasets} />
         <Route path="/agents" component={Agents} />
         <Route path="/model" component={ModelInfo} />
+        <Route path="/download" component={DownloadPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

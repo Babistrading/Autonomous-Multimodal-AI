@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { MessageSquare, Cpu, Server, Database, Bot, Brain } from "lucide-react";
+import { MessageSquare, Cpu, Server, Database, Bot, Brain, Download } from "lucide-react";
 import { useGetTrainingStatus } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { path: "/datasets",  label: "Datasets", icon: Database },
   { path: "/agents",    label: "Agents",   icon: Bot },
   { path: "/model",     label: "Model",    icon: Brain },
+  { path: "/download",  label: "Download", icon: Download },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {

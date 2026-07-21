@@ -8,6 +8,7 @@ import checkpointsRouter from "./checkpoints.js";
 import agentsRouter from "./agents.js";
 import modelRouter from "./model.js";
 import hardwareRouter from "./hardware.js";
+import iosRouter from "./ios.js";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(checkpointsRouter);
 router.use(agentsRouter);
 router.use(modelRouter);
 router.use(hardwareRouter);
+router.use(iosRouter);
 
 export default router;
