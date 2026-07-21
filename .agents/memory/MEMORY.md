@@ -1,0 +1,2 @@
+- [Deployment target must be VM](deployment-vm.md) — training loop dies on autoscale (scales to zero); must use `deploymentTarget = "vm"` for 24/7 operation.
+- [Worker chunk tracking fix](worker-chunk-fix.md) — per-worker FineWeb bounds must come from `cursor.getWorkerBounds(worker.id)`, not the global cursor, or all workers show the same range.

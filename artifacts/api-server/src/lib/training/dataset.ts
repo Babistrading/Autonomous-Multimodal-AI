@@ -83,6 +83,10 @@ const CHUNK_SIZE = 100; // lines per worker chunk
 interface WorkerChunkState {
   samples: string[];
   pos: number;
+  /** Absolute line-index start of this worker's current chunk (for display). */
+  chunkStart: number;
+  /** Absolute line-index end of this worker's current chunk (for display). */
+  chunkEnd: number;
 }
 
 /**
@@ -131,7 +135,7 @@ export class FineWebCursorManager {
       const nextCursor = start + CHUNK_SIZE;
       this.globalCursor = nextCursor >= pool.length ? 0 : nextCursor;
 
-      state = { samples: chunk, pos: 0 };
+      state = { samples: chunk, pos: 0, chunkStart: start, chunkEnd: end };
       this.workerState.set(workerId, state);
     }
 
@@ -153,6 +157,16 @@ export class FineWebCursorManager {
       result.push(...tokenizer.encode(extra, false, false));
     }
     return result.slice(0, seqLen);
+  }
+
+  /**
+   * Returns the absolute line-index bounds of the chunk currently assigned to
+   * a worker. Used by the engine to display accurate, non-overlapping ranges.
+   */
+  getWorkerBounds(workerId: number): { start: number; end: number } {
+    const state = this.workerState.get(workerId);
+    if (!state) return { start: 0, end: 0 };
+    return { start: state.chunkStart, end: state.chunkEnd };
   }
 
   reset(): void {

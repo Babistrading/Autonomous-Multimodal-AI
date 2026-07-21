@@ -83,7 +83,7 @@ async function bootTraining(attempt = 1): Promise<void> {
     // 2. Start the continuous training loop.
     //    The engine's internal setImmediate loop runs forever, yielding between
     //    steps so the event loop (and HTTP requests) stay responsive.
-    await trainingEngine.start("medium");
+    await trainingEngine.start("max");
     logger.info("✓ Training loop active — Babis M1 is learning 24/7");
 
   } catch (err) {

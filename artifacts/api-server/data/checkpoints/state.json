@@ -1,0 +1,12 @@
+{
+  "step": 6325,
+  "epoch": 12,
+  "loss": 5.785386469771352,
+  "validationLoss": 5.785386469771352,
+  "perplexity": 325.50781473775635,
+  "learningRate": 0.0002998999936098048,
+  "tokensProcessed": 151800,
+  "powerMode": "medium",
+  "finewebCursor": 1000,
+  "savedAt": "2026-07-21T12:25:09.805Z"
+}

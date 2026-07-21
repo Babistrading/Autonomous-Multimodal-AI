@@ -555,13 +555,13 @@ class TrainingEngine {
       this.lastTpsUpdate = now;
     }
 
-    // Update worker display info
-    const cursor = this.cursor.getGlobalCursor();
+    // Update worker display info — use per-worker bounds, not the shared global cursor
+    const bounds = this.cursor.getWorkerBounds(worker.id);
     worker.processed += seqLen;
     worker.tokensPerSecond = tps;
-    worker.currentTask = `FineWeb lines ${worker.chunkStart}–${worker.chunkEnd} | loss ${loss.toFixed(4)}`;
-    worker.chunkStart = Math.max(0, cursor - 100);
-    worker.chunkEnd = cursor;
+    worker.chunkStart = bounds.start;
+    worker.chunkEnd = bounds.end;
+    worker.currentTask = `FineWeb lines ${bounds.start}–${bounds.end} | loss ${loss.toFixed(4)}`;
     worker.queueSize = Math.max(0, worker.queueSize - 1 + Math.floor(Math.random() * 2));
 
     // Buffer metrics for DB
