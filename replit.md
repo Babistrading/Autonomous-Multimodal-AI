@@ -4,12 +4,15 @@ A full-stack AI platform with a training dashboard, chat interface, model manage
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+Workflows are configured and managed by Replit — restart them from the workflow panel if needed.
+
+- **API Server** (`artifacts/api-server`): `pnpm --filter @workspace/api-server run dev` (builds with esbuild, then starts Node)
+- **Web UI** (`artifacts/babis-m1`): `pnpm --filter @workspace/babis-m1 run dev` (Vite dev server)
+- `pnpm install` — install/link all workspace dependencies (run from root)
+- `pnpm --filter @workspace/db run push` — push Drizzle schema changes to the dev database
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `DATABASE_URL` is managed automatically by Replit — no manual setup needed
 
 ## Stack
 
@@ -22,15 +25,26 @@ A full-stack AI platform with a training dashboard, chat interface, model manage
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/src/` — Express API, routes, training engine, BPE tokenizer, math kernels
+- `artifacts/babis-m1/src/` — React frontend (chat, training dashboard, workers, datasets, agents, model)
+- `lib/db/src/schema/` — Drizzle ORM schema (source of truth for DB tables)
+- `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contract)
+- `lib/api-client-react/` — generated React hooks (from Orval codegen)
+- `lib/api-zod/` — generated Zod validators (from Orval codegen)
+- `artifacts/api-server/data/checkpoints/` — persisted model weight files
+- `artifacts/api-server/data/tokenizer/` — persisted BPE vocab
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Training runs as a self-healing 24/7 loop inside the API server process; a watchdog restarts stalled loops automatically.
+- The API server requires `deploymentTarget = "vm"` for continuous training — autoscale would kill the loop on scale-to-zero.
+- BPE tokenizer is trained once on first boot and persisted to disk; subsequent boots load it in milliseconds.
+- The 40M-param transformer uses vanilla Float32Array math (no GPU/WASM acceleration); this keeps the code portable but caps training speed.
+- API codegen (Orval) generates both fetch clients and Zod validators from a single OpenAPI spec — edit the spec, not the generated files.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Babis M1 is an autonomous AI training platform. It continuously trains a 40M-parameter LLaMA-2 inspired transformer on FineWeb web text, 24/7. Users can chat with the model as it trains, monitor loss curves and training metrics on the dashboard, inspect datasets and workers, manage agents, and view checkpoint history.
 
 ## User preferences
 
