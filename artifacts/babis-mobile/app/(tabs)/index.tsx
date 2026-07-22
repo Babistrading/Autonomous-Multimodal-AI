@@ -219,7 +219,7 @@ export default function ChatScreen() {
   const inputRef = useRef<TextInput>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────────
-  const { data: sessions = [] } = useListChatSessions(undefined, {
+  const { data: sessions = [] } = useListChatSessions({
     query: { refetchInterval: 10_000 },
   });
 
@@ -228,7 +228,7 @@ export default function ChatScreen() {
     { query: { enabled: !!activeSessionId, refetchInterval: 0 } },
   );
 
-  const { data: trainingStatus } = useGetTrainingStatus(undefined, {
+  const { data: trainingStatus } = useGetTrainingStatus({
     query: { refetchInterval: 5_000 },
   });
 

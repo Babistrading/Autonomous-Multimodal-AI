@@ -99,4 +99,26 @@ router.get("/ios/status", (_req, res) => {
   res.json({ workone: { available: workone }, worktwo: { available: worktwo } });
 });
 
+/**
+ * Returns the Expo Go deep-link URL for instant on-device installation.
+ * Works without an Apple Developer account — user just needs Expo Go installed.
+ *
+ * expoUrl  → open directly in Expo Go on device  (exp://…)
+ * webUrl   → QR-code target for desktop scanning  (https://…)
+ */
+router.get("/expo-url", (req, res) => {
+  const domain = process.env.REPLIT_EXPO_DEV_DOMAIN ?? "";
+  if (!domain) {
+    return res.status(503).json({ error: "Expo dev domain not configured" });
+  }
+  const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? "https";
+  const host =
+    (req.headers["x-forwarded-host"] as string | undefined) ?? req.headers.host ?? "localhost";
+  res.json({
+    expoUrl: `exp://${domain}`,
+    webUrl: `${proto}://${host}`,
+    domain,
+  });
+});
+
 export default router;

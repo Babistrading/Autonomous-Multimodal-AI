@@ -1,12 +1,12 @@
 {
-  "step": 20033,
-  "epoch": 40,
-  "loss": 5.755287267601214,
-  "validationLoss": 5.755287267601214,
-  "perplexity": 315.856269765745,
-  "learningRate": 0.0007972064895253599,
-  "tokensProcessed": 809784,
+  "step": 32677,
+  "epoch": 65,
+  "loss": 5.881810747429658,
+  "validationLoss": 5.881810747429658,
+  "perplexity": 358.4577308213926,
+  "learningRate": 0.0007925252586348568,
+  "tokensProcessed": 1416696,
   "powerMode": "max",
-  "finewebCursor": 4300,
-  "savedAt": "2026-07-21T23:30:49.531Z"
+  "finewebCursor": 2100,
+  "savedAt": "2026-07-22T00:18:32.205Z"
 }

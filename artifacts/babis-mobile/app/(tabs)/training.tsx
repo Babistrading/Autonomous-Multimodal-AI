@@ -101,7 +101,7 @@ export default function TrainingScreen() {
   const insets = useSafeAreaInsets();
   const local = useLocalTraining();
 
-  const { data: status } = useGetTrainingStatus(undefined, {
+  const { data: status } = useGetTrainingStatus({
     query: { refetchInterval: 2_000 },
   });
   const { data: serverMetrics = [] } = useGetTrainingMetrics(

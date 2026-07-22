@@ -43,13 +43,13 @@ export default function WorkersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const { data: workers = [], isLoading: workersLoading } = useListWorkers(undefined, {
+  const { data: workers = [], isLoading: workersLoading } = useListWorkers({
     query: { refetchInterval: 3_000 },
   });
-  const { data: datasets = [], isLoading: datasetsLoading } = useListDatasets(undefined, {
+  const { data: datasets = [], isLoading: datasetsLoading } = useListDatasets({
     query: { refetchInterval: 8_000 },
   });
-  const { data: overview } = useGetDatasetOverview(undefined, {
+  const { data: overview } = useGetDatasetOverview({
     query: { refetchInterval: 8_000 },
   });
   const generateDataset = useGenerateDataset();

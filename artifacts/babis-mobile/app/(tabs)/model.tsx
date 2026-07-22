@@ -56,16 +56,16 @@ export default function ModelScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const { data: modelInfo, isLoading: modelLoading } = useGetModelInfo(undefined, {
+  const { data: modelInfo, isLoading: modelLoading } = useGetModelInfo({
     query: { staleTime: 60_000 },
   });
-  const { data: tokStats, isLoading: tokLoading } = useGetTokenizerStats(undefined, {
+  const { data: tokStats, isLoading: tokLoading } = useGetTokenizerStats({
     query: { staleTime: 30_000 },
   });
-  const { data: agents = [], isLoading: agentsLoading } = useListAgents(undefined, {
+  const { data: agents = [], isLoading: agentsLoading } = useListAgents({
     query: { refetchInterval: 5_000 },
   });
-  const { data: checkpoints = [], isLoading: cpLoading } = useListCheckpoints(undefined, {
+  const { data: checkpoints = [], isLoading: cpLoading } = useListCheckpoints({
     query: { staleTime: 15_000 },
   });
 
